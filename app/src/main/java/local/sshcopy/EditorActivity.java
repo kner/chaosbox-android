@@ -195,12 +195,21 @@ public class EditorActivity extends Activity {
         category.setOnClickListener(v -> { if (!searchMode) category.showDropDown(); });
         category.setCompoundDrawablesWithIntrinsicBounds(0, 0, android.R.drawable.arrow_down_float, 0);
         root.addView(category, matchWrap());
-        comment = field(root, "Kommentar");
-        comment.setSingleLine(false);
-        comment.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        comment.setGravity(Gravity.TOP | Gravity.START);
-        comment.setMinLines(2);
-        comment.setMaxLines(5);
+        root.addView(text("Kommentar", 13, Color.DKGRAY), matchWrap());
+        // Inflate scrollbar attributes so Android initializes its scrollbar drawable at construction.
+        comment = (EditText) getLayoutInflater().inflate(R.layout.comment_input, root, false);
+        root.addView(comment);
+        comment.setOnTouchListener((view, event) -> {
+            boolean scrolling = view.canScrollVertically(-1) || view.canScrollVertically(1);
+            int action = event.getActionMasked();
+            if (action == android.view.MotionEvent.ACTION_UP
+                    || action == android.view.MotionEvent.ACTION_CANCEL) {
+                view.getParent().requestDisallowInterceptTouchEvent(false);
+            } else if (scrolling) {
+                view.getParent().requestDisallowInterceptTouchEvent(true);
+            }
+            return false; // Keep the EditText's normal scrolling, selection and editing.
+        });
         packageField = field(root, "Package");
 
         progress = new ProgressBar(this);
@@ -933,20 +942,40 @@ public class EditorActivity extends Activity {
             }
         }
 
+        private static String commentText(JSONObject json) {
+            return json.optString("comment", json.optString("kommentar", json.optString("Kommentar", "")));
+        }
+
         static MetadataData parse(String raw) {
             MetadataData data = new MetadataData();
             if (raw == null || raw.trim().isEmpty()) return data;
             try {
-                JSONObject json = new JSONObject(raw);
+                Object value = new org.json.JSONTokener(raw).nextValue();
+                org.json.JSONArray items = value instanceof org.json.JSONArray
+                        ? (org.json.JSONArray) value : null;
+                if (items != null && items.length() == 0) return data;
+                if (items == null && !(value instanceof JSONObject))
+                    throw new JSONException("JSON-Objekt oder Liste erwartet");
+                JSONObject json = items == null ? (JSONObject) value : items.getJSONObject(0);
                 data.created = json.optString("created", "");
                 data.box = json.optString("box", "");
-                data.amount = Math.max(0, json.optInt("count", json.optInt("anzahl", 0)));
+                data.amount = Math.max(0, json.optInt("count", json.optInt("anzahl", json.optInt("Anzahl", 0))));
                 data.device = json.optString("device", "");
                 data.alias = json.optString("alias", "");
                 data.packageName = json.isNull("pack")
                         ? json.optString("package", "") : json.optString("pack", "");
-                data.category = json.optString("category", "");
-                data.comment = json.optString("comment", "");
+                data.category = CategoryValues.read(raw);
+                data.comment = commentText(json);
+                if (items != null) {
+                    StringBuilder comments = new StringBuilder();
+                    for (int i = 0; i < items.length(); i++) {
+                        String text = commentText(items.getJSONObject(i));
+                        if (text.isEmpty()) continue;
+                        if (comments.length() > 0) comments.append("\n\n");
+                        comments.append(text);
+                    }
+                    data.comment = comments.toString();
+                }
                 return data;
             } catch (JSONException ignored) {
                 // Fremde oder ältere Inhalte bleiben als unstrukturierter Kommentar erhalten.
