@@ -7,7 +7,7 @@
 #  -dname "CN=SSHCopy"
 
 #2. Schritt
-  BUILD_TOOLS="./.tooling/android-sdk/build-tools/35.0.0"
+  BUILD_TOOLS="${ANDROID_HOME:-/opt/android-sdk}/build-tools/35.0.0"
   "$BUILD_TOOLS/zipalign" -f -p 4 \
   app/build/outputs/apk/release/app-release-unsigned.apk \
   SSHCopy-aligned.apk

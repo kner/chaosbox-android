@@ -10,6 +10,8 @@ final class Config {
     static final String USER = "u114229695";
     // Relative destination paths resolve under the SSH user's home directory.
     static final String DESTINATION = "android_copy";
+    static final String IMAGE_DESTINATION = "l1/storage/app/exif/jpg";
+    static final String JSON_DESTINATION = "l1/storage/app/exif/data";
     // Files in the app's private files directory (or optional bundled assets).
     static final String KEY_FILE = "android_copy";
     static final String KNOWN_HOSTS_FILE = "known_hosts";

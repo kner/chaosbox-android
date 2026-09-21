@@ -15,8 +15,8 @@ apk="$PWD/SSHCopy-debug.apk"
 [[ -f "$apk" ]] || { echo "Fehler: APK fehlt. Zuerst ./build-apk.sh ausführen." >&2; exit 1; }
 if command -v adb >/dev/null 2>&1; then
     adb_bin="$(command -v adb)"
-elif [[ -x "$PWD/.tooling/android-sdk/platform-tools/adb" ]]; then
-    adb_bin="$PWD/.tooling/android-sdk/platform-tools/adb"
+elif [[ -x "${ANDROID_HOME:-/opt/android-sdk}/platform-tools/adb" ]]; then
+    adb_bin="${ANDROID_HOME:-/opt/android-sdk}/platform-tools/adb"
 else
     echo "Fehler: adb fehlt. Android SDK Platform-Tools installieren." >&2
     exit 1

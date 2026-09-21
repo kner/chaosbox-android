@@ -109,9 +109,16 @@ Libraries: [JSch](https://github.com/mwiede/jsch) and
 [Bouncy Castle](https://www.bouncycastle.org/).
 Storage behavior: [Android documentation](https://developer.android.com/training/data-storage/manage-all-files).
 
-On this workspace the toolchain is already downloaded: `./build-apk.sh` builds,
-lints, and copies the result to `SSHCopy-debug.apk`. The SDK is stored persistently in `.tooling/android-sdk`.
-`local.properties` points to that directory; `build-apk.sh` also sets `ANDROID_HOME`.
+On this workspace the toolchain is installed system-wide: the Android SDK is in
+`/opt/android-sdk` and Gradle 8.11.1 is in `/opt/gradle-8.11.1`.
+`./build-apk.sh` builds, lints, and copies the result to `SSHCopy-debug.apk`.
+Set `sdk.dir=/opt/android-sdk` in `local.properties`. The build script defaults
+to these system paths; `ANDROID_HOME` and `GRADLE_HOME` can override them
+(keep `local.properties` consistent with the SDK path).
+Gradle and Android use their normal per-user directories (`~/.gradle` and
+`~/.android`), or explicitly configured `GRADLE_USER_HOME` and `ANDROID_USER_HOME`.
+When migrating an existing development setup, preserve its debug signing key
+as `~/.android/debug.keystore` to keep APK updates compatible.
 
 File-selection regression check:
 

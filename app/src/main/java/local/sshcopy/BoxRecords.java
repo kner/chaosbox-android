@@ -19,6 +19,37 @@ final class BoxRecords {
         }
     }
 
+    static java.util.List<JSONObject> parseRecords(String text) throws IOException {
+        try {
+            if (text.startsWith("\uFEFF")) text = text.substring(1);
+            JSONTokener parser = new JSONTokener(text);
+            Object value = parser.nextValue();
+            if (parser.nextClean() != 0) throw new JSONException("Zusätzlicher Inhalt");
+            java.util.List<JSONObject> records = new java.util.ArrayList<>();
+            if (value instanceof JSONArray) {
+                JSONArray array = (JSONArray) value;
+                for (int i = 0; i < array.length(); i++) records.add(array.getJSONObject(i));
+            } else if (value instanceof JSONObject) {
+                JSONObject object = (JSONObject) value;
+                if (object.has("device") || object.has("box") || object.has("comment")
+                        || object.has("anzahl") || object.has("category") || object.has("alias")
+                        || object.has("package") || object.has("count") || object.has("pack")
+                        || object.has("created") || object.has("modified")) {
+                    records.add(object);
+                } else {
+                    java.util.Iterator<String> keys = object.keys();
+                    while (keys.hasNext()) records.add(object.getJSONObject(keys.next()));
+                }
+            } else {
+                throw new JSONException("Objekt oder Array erwartet");
+            }
+            if (records.isEmpty()) throw new JSONException("Keine Datensätze vorhanden");
+            return records;
+        } catch (JSONException e) {
+            throw new IOException("Ungültige JSON-Datensätze: " + e.getMessage(), e);
+        }
+    }
+
     static synchronized File save(File directory, String name, String json) throws IOException {
         validateName(name);
         Files.createDirectories(directory.toPath());
