@@ -1,0 +1,11 @@
+[
+  {
+    "box": "24.9o",
+    "count": 4,
+    "device": "43P",
+    "alias": "",
+    "comment": "n-ch fet J113",
+    "category": "nmos",
+    "pack": "SOT23"
+  }
+]

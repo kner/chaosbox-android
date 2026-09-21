@@ -1,0 +1,10 @@
+.gradle/
+.tooling/
+build/
+app/build/
+local.properties
+*.jks
+*.keystore
+app/src/main/assets/z
+ls
+app/src/main/assets/known_hosts

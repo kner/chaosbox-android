@@ -1,0 +1,11 @@
+[
+  {
+    "box": "a1",
+    "count": 1,
+    "device": "test",
+    "alias": "testa",
+    "comment": "testc",
+    "category": "testk",
+    "pack": "packa"
+  }
+]

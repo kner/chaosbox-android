@@ -1,0 +1,11 @@
+[
+  {
+    "box": "56.2o",
+    "count": 10,
+    "device": "l4p",
+    "alias": "",
+    "comment": "BAT54 BAT85 SCHOTTKY ",
+    "category": "schottky",
+    "pack": "SOT23"
+  }
+]

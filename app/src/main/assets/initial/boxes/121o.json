@@ -1,0 +1,20 @@
+[
+  {
+    "box": "121o",
+    "count": 4,
+    "device": "A08U",
+    "alias": "nand",
+    "comment": null,
+    "category": "nand",
+    "pack": "SOT23 5pin"
+  },
+  {
+    "box": "121o",
+    "count": 7,
+    "device": "A08U A08s",
+    "alias": "nand",
+    "comment": null,
+    "category": "nand",
+    "pack": "SOT23 5pin"
+  }
+]

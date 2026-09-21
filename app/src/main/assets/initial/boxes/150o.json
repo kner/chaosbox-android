@@ -1,0 +1,11 @@
+[
+  {
+    "box": "150o",
+    "count": 4,
+    "device": "7s14",
+    "alias": "schmitt trigger",
+    "comment": null,
+    "category": "nand",
+    "pack": "SOT23 5pin"
+  }
+]
