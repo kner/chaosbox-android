@@ -1,7 +1,5 @@
 plugins { id 'com.android.application' }
 android {
-    // Historical copies are retained; compile only the canonical implementations.
-    sourceSets.main.java.exclude '**/* (*in Konflikt stehende Kopie*).java'
     namespace 'local.sshcopy'
     compileSdk 35
     defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 7; versionName '2.5' }

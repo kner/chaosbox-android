@@ -57,13 +57,9 @@ final class BoxRecords {
     }
 
     static synchronized File save(File directory, String name, String json) throws IOException {
-        return save(directory, name, json, -1);
-    }
-
-    static synchronized File save(File directory, String name, String json, int selectedIndex) throws IOException {
         validateName(name);
         Files.createDirectories(directory.toPath());
-        Path target = directory.toPath().resolve(name.endsWith(".json") ? name : name + ".json");
+        Path target = directory.toPath().resolve(name + ".json");
         if (Files.isSymbolicLink(target)) throw new IOException("Box-Datei darf kein symbolischer Link sein.");
         JSONArray records = new JSONArray();
         try {
@@ -87,49 +83,10 @@ final class BoxRecords {
                 }
                 else throw new JSONException("Objekt oder Array erwartet");
             }
-            JSONObject incoming = new JSONObject(json);
-            String device = incoming.optString("device", "");
-            // An explicitly selected record is the edit target, independent of its device label.
-            if (selectedIndex < -1 || selectedIndex >= records.length()) {
-                throw new IOException("Der ausgewählte Datensatz existiert nicht mehr. Box erneut öffnen.");
-            }
-            int match = selectedIndex;
-            if (match < 0) {
-                for (int i = 0; i < records.length(); i++) {
-                    if (device.equals(records.getJSONObject(i).optString("device", ""))) {
-                        match = i;
-                        break;
-                    }
-                }
-            }
-            if (match >= 0) {
-                JSONObject existing = records.getJSONObject(match);
-                java.util.Iterator<String> keys = incoming.keys();
-                while (keys.hasNext()) {
-                    String key = keys.next();
-                    if (key.equals("created") && !existing.optString("created", "").isEmpty()) continue;
-                    existing.put(key, incoming.get(key));
-                }
-                // Imported count/pack fields take precedence when reading; keep aliases consistent.
-                if (incoming.has("count") || incoming.has("anzahl")) {
-                    Object amount = incoming.has("count") ? incoming.get("count") : incoming.get("anzahl");
-                    if (existing.has("count")) existing.put("count", amount);
-                    if (existing.has("anzahl")) existing.put("anzahl", amount);
-                }
-                if (incoming.has("pack") || incoming.has("package")) {
-                    Object pack = incoming.has("pack") ? incoming.get("pack") : incoming.get("package");
-                    if (existing.has("pack")) existing.put("pack", pack);
-                    if (existing.has("package")) existing.put("package", pack);
-                }
-            } else records.put(incoming);
+            records.put(new JSONObject(json));
             Path temporary = Files.createTempFile(directory.toPath(), ".box-", ".tmp");
             try {
                 Files.write(temporary, records.toString(2).getBytes(StandardCharsets.UTF_8));
-                if (Files.exists(target)) {
-                    long modified = Math.max(System.currentTimeMillis(),
-                            (Files.getLastModifiedTime(target).toMillis() / 1000 + 1) * 1000);
-                    Files.setLastModifiedTime(temporary, java.nio.file.attribute.FileTime.fromMillis(modified));
-                }
                 // Fail safely if this filesystem cannot replace the complete file atomically.
                 Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } finally {

@@ -89,17 +89,11 @@ final class BoxRecords {
             }
             JSONObject incoming = new JSONObject(json);
             String device = incoming.optString("device", "");
-            // An explicitly selected record is the edit target, independent of its device label.
-            if (selectedIndex < -1 || selectedIndex >= records.length()) {
-                throw new IOException("Der ausgewählte Datensatz existiert nicht mehr. Box erneut öffnen.");
-            }
-            int match = selectedIndex;
-            if (match < 0) {
-                for (int i = 0; i < records.length(); i++) {
-                    if (device.equals(records.getJSONObject(i).optString("device", ""))) {
-                        match = i;
-                        break;
-                    }
+            int match = -1;
+            for (int i = 0; i < records.length(); i++) {
+                JSONObject record = records.getJSONObject(i);
+                if (device.equals(record.optString("device", ""))) {
+                    if (match < 0 || i == selectedIndex) match = i;
                 }
             }
             if (match >= 0) {

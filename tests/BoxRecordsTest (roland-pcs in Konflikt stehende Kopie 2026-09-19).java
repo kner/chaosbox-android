@@ -55,25 +55,6 @@ public final class BoxRecordsTest {
             loaded = BoxRecords.load(dir, "devices");
             if (loaded.size()!=2 || loaded.get(0).getInt("anzahl")!=2 || loaded.get(1).getInt("anzahl")!=9)
                 throw new AssertionError("Wrong duplicate updated");
-            for (int quantity : new int[]{0, 12, 3}) {
-                BoxRecords.save(dir, "devices", "{\"device\":\"Sensor\",\"anzahl\":" + quantity + "}", 1);
-                loaded = BoxRecords.load(dir, "devices");
-                if (loaded.size()!=2 || loaded.get(0).getInt("anzahl")!=2
-                        || loaded.get(1).getInt("anzahl")!=quantity)
-                    throw new AssertionError("Quantity change appended or changed another record");
-            }
-            BoxRecords.save(dir, "devices", "{\"device\":\"Sensor korrigiert\",\"anzahl\":4}", 1);
-            loaded = BoxRecords.load(dir, "devices");
-            if (loaded.size()!=2 || !loaded.get(1).getString("device").equals("Sensor korrigiert")
-                    || loaded.get(1).getInt("anzahl")!=4)
-                throw new AssertionError("Selected record identity lost when label changed");
-            String beforeInvalidSelection = read(new File(dir, "devices.json"));
-            try {
-                BoxRecords.save(dir, "devices", "{\"device\":\"Sensor\",\"anzahl\":99}", 2);
-                throw new AssertionError("Stale selection accepted");
-            } catch (java.io.IOException expected) { }
-            if (!beforeInvalidSelection.equals(read(new File(dir, "devices.json"))))
-                throw new AssertionError("Stale selection modified the file");
             if (BoxRecords.load(dir, "devices.json").size() != 2)
                 throw new AssertionError("Extension handling failed");
             if (BoxRecords.parseRecords("\uFEFF{\"device\":\"Grüße\"}").size() != 1)

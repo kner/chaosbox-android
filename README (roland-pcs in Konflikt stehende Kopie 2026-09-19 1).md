@@ -36,12 +36,7 @@ mit mehreren Datensätzen unter eigenen Schlüsseln. Das editierbare Device-Feld
 listet die `device`-Werte auf; eine Auswahl lädt Anzahl, Box, Alias, Kategorie,
 Kommentar, Package und Erstellungsdatum des Datensatzes. Ein zuvor geöffnetes
 Bild wird dabei geschlossen. Der erste Datensatz wird zunächst angezeigt.
-Speichern aktualisiert den in der Device-Liste ausgewählten Datensatz in der Box-Datei.
-Eine Änderung der Anzahl erzeugt keinen neuen Eintrag, auch bei doppelten Device-Namen.
-Auch eine Änderung des Device-Namens bearbeitet den ausgewählten Eintrag. Ohne ausgewählten
-Datensatz wird ein bestehendes Device aktualisiert oder ein neues Device angelegt. Zusätzliche JSON-Felder
-und das ursprüngliche Erstellungsdatum bleiben erhalten; count/anzahl und pack/package
-werden beim Aktualisieren konsistent gehalten.
+Speichern hängt wie bisher einen neuen Datensatz an die Box-Datei an.
 
 Beim automatischen Upload werden Unterordner ausgelassen;
 Bilder aus JPG und JSON-Dateien aus boxes werden in den konfigurierten
@@ -133,10 +128,9 @@ Libraries: [JSch](https://github.com/mwiede/jsch) and
 [Bouncy Castle](https://www.bouncycastle.org/).
 Storage behavior: [Android documentation](https://developer.android.com/training/data-storage/manage-all-files).
 
-The system-wide Android SDK is in `/opt/android-sdk`, and Gradle 8.11.1 is in
-`/opt/gradle-8.11.1`. `./build-apk.sh` builds, lints, and copies the result to
-`SSHCopy-debug.apk`. `local.properties` points to `/opt/android-sdk`.
-User caches and the original debug signing key are in `~/.gradle` and `~/.android`.
+On this workspace the toolchain is already downloaded: `./build-apk.sh` builds,
+lints, and copies the result to `SSHCopy-debug.apk`. The SDK is stored persistently in `.tooling/android-sdk`.
+`local.properties` points to that directory; `build-apk.sh` also sets `ANDROID_HOME`.
 
 File-selection regression check:
 

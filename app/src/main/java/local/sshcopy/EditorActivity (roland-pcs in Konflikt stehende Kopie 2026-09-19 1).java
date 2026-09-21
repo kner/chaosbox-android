@@ -71,7 +71,6 @@ public class EditorActivity extends Activity {
     private android.widget.AutoCompleteTextView device;
     private final List<DeviceRecord> deviceRecords = new ArrayList<>();
     private String openedBoxName;
-    private DeviceRecord activeRecord;
     private android.widget.ImageButton openJson;
     private android.widget.ImageButton choose, setup;
     private EditText comment;
@@ -450,14 +449,10 @@ public class EditorActivity extends Activity {
         openedBoxName = hit.data.optString("box", "");
         deviceRecords.clear();
         DeviceRecord selected = null;
-        java.util.Map<File, Integer> sourceIndices = new java.util.HashMap<>();
         for (DataIndex.Entry entry : entries) {
-            int sourceIndex = sourceIndices.getOrDefault(entry.source, 0);
-            sourceIndices.put(entry.source, sourceIndex + 1);
             if (entry == hit || (!openedBoxName.isEmpty() && openedBoxName.equals(entry.data.optString("box", "")))) {
                 DeviceRecord record = new DeviceRecord(entry.data);
                 record.source = entry.source;
-                record.recordIndex = entry.image ? -1 : sourceIndex;
                 record.image = entry.image;
                 record.previewFile = DataIndex.imageFor(entry, entries);
                 deviceRecords.add(record);
@@ -507,13 +502,7 @@ public class EditorActivity extends Activity {
                 List<JSONObject> records = BoxRecords.load(
                         new File(Environment.getExternalStorageDirectory(), Config.BOXES), name);
                 List<DeviceRecord> choices = new ArrayList<>();
-                for (JSONObject record : records) {
-                    DeviceRecord choice = new DeviceRecord(record);
-                    choice.recordIndex = choices.size();
-                    choice.source = new File(new File(Environment.getExternalStorageDirectory(), Config.BOXES),
-                            name.endsWith(".json") ? name : name + ".json");
-                    choices.add(choice);
-                }
+                for (JSONObject record : records) choices.add(new DeviceRecord(record));
                 runOnUiThread(() -> {
                     selectedUri = null;
                     selectedName = null;
@@ -540,7 +529,6 @@ public class EditorActivity extends Activity {
     }
 
     private void applyRecord(DeviceRecord record) {
-        activeRecord = record;
         MetadataData values = record.values;
         createdAt = values.created;
         box.setText(values.box.isEmpty() ? openedBoxName : values.box);
@@ -563,7 +551,6 @@ public class EditorActivity extends Activity {
         final MetadataData values;
         File source, previewFile;
         boolean image;
-        int recordIndex = -1;
         DeviceRecord(JSONObject json) { values = MetadataData.parse(json.toString()); }
         @Override public String toString() {
             return values.device.isEmpty() ? "(ohne Device)" : values.device;
@@ -685,7 +672,6 @@ public class EditorActivity extends Activity {
         if (requestCode == PICK_IMAGE && resultCode == RESULT_OK && data != null) {
             deviceRecords.clear();
             openedBoxName = null;
-            activeRecord = null;
             refreshDevices();
             selectedUri = data.getData();
             selectedName = queryName(selectedUri);
@@ -762,40 +748,13 @@ public class EditorActivity extends Activity {
             try { BoxRecords.validateName(boxName); box.setError(null); }
             catch (IOException e) { box.setError(e.getMessage()); box.requestFocus(); return; }
         }
-        final DeviceRecord originalRecord = activeRecord;
         final Uri imageUri = selectedUri;
         final String imageName = selectedName;
         setBusy(true);
         worker.execute(() -> {
             try {
                 if (imageUri == null) {
-                    File directory = new File(Environment.getExternalStorageDirectory(), Config.BOXES);
-                    File target = new File(directory, boxName.endsWith(".json") ? boxName : boxName + ".json");
-                    int preferredIndex = originalRecord != null && !originalRecord.image
-                            && originalRecord.source != null
-                            && originalRecord.source.getCanonicalFile().equals(target.getCanonicalFile())
-                            ? originalRecord.recordIndex : -1;
-                    File saved = BoxRecords.save(directory, boxName, userComment, preferredIndex);
-                    List<JSONObject> records = BoxRecords.load(directory, saved.getName());
-                    List<DeviceRecord> choices = new ArrayList<>();
-                    String savedDevice = new JSONObject(userComment).optString("device", "");
-                    DeviceRecord selected = null;
-                    for (JSONObject record : records) {
-                        DeviceRecord choice = new DeviceRecord(record);
-                        choice.source = saved;
-                        choice.recordIndex = choices.size();
-                        choices.add(choice);
-                        if (savedDevice.equals(choice.values.device)
-                                && (selected == null || choice.recordIndex == preferredIndex)) selected = choice;
-                    }
-                    final DeviceRecord savedRecord = selected;
-                    runOnUiThread(() -> {
-                        openedBoxName = saved.getName().substring(0, saved.getName().length() - 5);
-                        deviceRecords.clear();
-                        deviceRecords.addAll(choices);
-                        refreshDevices();
-                        if (savedRecord != null) applyRecord(savedRecord);
-                    });
+                    File saved = BoxRecords.save(new File(Environment.getExternalStorageDirectory(), Config.BOXES), boxName, userComment);
                     uploadAfterSave("Gespeichert: ChaosBox/boxes/" + saved.getName());
                     return;
                 }
