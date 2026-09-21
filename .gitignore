@@ -6,5 +6,10 @@ local.properties
 *.jks
 *.keystore
 app/src/main/assets/z
-ls
 app/src/main/assets/known_hosts
+
+# Generated packages and Dropbox conflict copies
+*.apk
+*.idsig
+* (*in Konflikt stehende Kopie*)*
+* (*conflicted copy*)*

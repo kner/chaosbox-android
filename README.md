@@ -34,36 +34,11 @@ und known_hosts bleiben im privaten Speicher der App erhalten.
 ```
 
 Ausgabe: `SSHCopy-debug.apk` (App-Name auf dem Smartphone: ChaosBox).
-Das ehemalige xfComment-Projekt ist als Quellcode-Archiv unter
-`backups/xfcomment-before-integration.tar.gz` gesichert.
+Das frühere xfComment-Quellcode-Archiv und entfernte Dropbox-Konfliktkopien
+sind weiterhin in der Git-Historie verfügbar.
 
 ---
 
-## Frühere SSH-Copy-Dokumentation
-
-Die folgenden Angaben beschreiben teilweise den früheren Stand; für Startansicht
-und Pfade gelten die Angaben oben.
-
-# SSH Copy for Android
-
-Opening the app automatically uploads the immediate regular files in
-`/storage/emulated/0/source` to `x@hostname:22`, directory `y` relative to the SSH
-user's home. The remote directory must already exist. Hidden files are included;
-subdirectories and symbolic links are skipped. Existing remote files of the same
-name are overwritten. Source files are never deleted. Transfers use SFTP over SSH.
-
-There is no Copy button, folder picker, or connection form. Android requires a
-one-time storage-access grant. Keep the app open until it reports completion.
-Opening a new app instance starts another transfer; it is not a boot/background scheduler.
-If interrupted, completed files remain copied and the current remote file may be
-partial; reopening copies the files again.
-
-## Hardcoded settings
-
-Edit `app/src/main/java/local/sshcopy/Config.java` and rebuild to replace the supplied
-literal placeholders `source`, `hostname`, `x`, `y`. Relative source paths resolve
-under shared internal storage. Absolute source paths are also supported, subject
-to Android access restrictions.
 
 ## SSH credentials (one-time local setup)
 

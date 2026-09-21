@@ -1,6 +1,6 @@
 plugins { id 'com.android.application' }
 android {
-    // Preserve Dropbox conflict copies on disk, but do not compile duplicate classes.
+    // Ignore any future Dropbox conflict copies to avoid duplicate classes.
     sourceSets.main.java.exclude '**/* (*in Konflikt stehende Kopie*).java'
     namespace 'local.sshcopy'
     compileSdk 35
