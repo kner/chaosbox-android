@@ -49,10 +49,12 @@ final class UploadFiles {
             show("los gehts\n");
             java.util.Map<File, String> files = new java.util.LinkedHashMap<>();
             for (File file : paths.imageFiles()) {
+                if (!paths.canUpload(file)) continue;
                 String subfolder = remoteSubfolder(file, paths.images, paths.legacyImages);
                 files.put(file, Config.IMAGE_DESTINATION + subfolder);
             }
             for (File file : paths.jsonFiles()) {
+                if (!paths.canUpload(file)) continue;
                 String subfolder = remoteSubfolder(file, paths.data, paths.legacyData);
                 files.put(file, Config.JSON_DESTINATION + subfolder);
             }
@@ -102,7 +104,7 @@ final class UploadFiles {
                     currentDestination = destination;
                 }
                 // Recheck before opening; never recurse or follow a source symlink.
-                if (!Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                if (!paths.canUpload(file) || !Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
                     throw new IOException("Source changed: " + file.getName());
                 }
 

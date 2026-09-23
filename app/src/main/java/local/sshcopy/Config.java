@@ -4,6 +4,7 @@ final class Config {
     // Relative source paths resolve under shared internal storage.
     static final String SOURCE = "ChaosBox/JPG";
     static final String SETUP = "ChaosBox/Setup/setup.ini";
+    static final String SETUP_ASSET = "initial/Setup/setup.ini";
     static final String BOXES = "ChaosBox/boxes";
     static final String HOST = "access983197478.webspace-data.io";
     static final int PORT = 22;

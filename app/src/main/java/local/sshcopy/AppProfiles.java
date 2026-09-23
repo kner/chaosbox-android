@@ -92,7 +92,7 @@ final class AppProfiles {
     private static Map<String, Map<String, String>> sections(String text) throws IOException {
         Map<String, Map<String, String>> sections = new LinkedHashMap<>();
         Map<String, String> values = null;
-        for (String raw : text.replace("\uFEFF", "").split("\\r?\\n")) {
+        for (String raw : TextSnippets.lines(text)) {
             String line = raw.trim();
             if (line.startsWith("[") && line.endsWith("]")) {
                 values = sections.computeIfAbsent(line.substring(1, line.length() - 1).trim(), k -> new LinkedHashMap<>());
@@ -113,10 +113,10 @@ final class AppProfiles {
         return new ArrayList<>(unique.values());
     }
 
-    private static String legacyCategoryValue(String text) {
+    private static String legacyCategoryValue(String text) throws IOException {
         boolean oldCategorySection = false;
         List<String> entries = new ArrayList<>();
-        for (String raw : text.replace("\uFEFF", "").split("\\r?\\n")) {
+        for (String raw : TextSnippets.lines(text)) {
             String line = raw.trim();
             if (line.startsWith("[") && line.endsWith("]")) {
                 oldCategorySection = line.equalsIgnoreCase("[Kategorie]");
@@ -138,7 +138,7 @@ final class AppProfiles {
         String current = "";
         boolean skip = false;
         boolean hasCategory = false;
-        String[] lines = text.split("\\r?\\n", -1);
+        String[] lines = TextSnippets.lines(text).toArray(new String[0]);
         for (int position = 0; position < lines.length; position++) {
             String raw = lines[position];
             if (position == lines.length - 1 && raw.isEmpty()) break;

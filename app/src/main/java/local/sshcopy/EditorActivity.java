@@ -954,7 +954,7 @@ public class EditorActivity extends Activity {
             return openOrCreateSetupFile();
         } catch (Exception ignored) {
             // Use defaults until shared-storage access has been granted.
-            return getAssets().open("setup.ini");
+            return getAssets().open(Config.SETUP_ASSET);
         }
     }
 
@@ -963,7 +963,7 @@ public class EditorActivity extends Activity {
         if (!dir.exists() && !dir.mkdirs()) throw new IOException("Setup-Ordner konnte nicht erstellt werden");
         File setup = new File(dir, "setup.ini");
         if (!setup.exists()) {
-            try (InputStream asset = getAssets().open("setup.ini"); OutputStream output = new FileOutputStream(setup)) {
+            try (InputStream asset = getAssets().open(Config.SETUP_ASSET); OutputStream output = new FileOutputStream(setup)) {
                 copy(asset, output);
             }
         }

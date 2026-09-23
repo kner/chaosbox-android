@@ -101,6 +101,10 @@ und das ursprüngliche Erstellungsdatum bleiben erhalten; count/anzahl und pack/
 werden beim Aktualisieren konsistent gehalten.
 
 Beim automatischen Upload bleiben die Unterordner von JPG und boxes erhalten.
+Die Übertragung erfolgt ausschließlich von der APK zum Server und nur für Dateien
+innerhalb von `/storage/emulated/0/ChaosBox`. Andere Profilordner wie `Bilderbox`
+werden nicht hochgeladen. Es gibt keinen Download, keinen Abgleich zurück zur APK
+und keine Übertragung von Löschungen zwischen App und Server.
 Bilder aus JPG und JSON-Dateien aus boxes werden in den konfigurierten
 Server-Zielordner hochgeladen, wenn sie fehlen oder lokal neuer sind. Gleich alte
 oder neuere Serverdateien bleiben erhalten. Verglichen wird die Änderungszeit
@@ -115,6 +119,13 @@ und known_hosts bleiben im privaten Speicher der App erhalten.
 ```
 
 Ausgabe: `SSHCopy-debug.apk` (App-Name auf dem Smartphone: ChaosBox).
+Die mitgelieferte Konfiguration stammt ausschließlich aus
+`app/src/main/assets/initial/Setup/setup.ini`. Sie liegt im APK unter
+`assets/initial/Setup/setup.ini` und wird beim Öffnen des Editors nach
+`/storage/emulated/0/ChaosBox/Setup/setup.ini` kopiert, sofern dort noch keine
+Datei vorhanden ist. Eine vorhandene Konfiguration bleibt bei einem App-Update
+erhalten. Um die neue Vorlage auf einem bestehenden Gerät zu übernehmen, die
+vorhandene Datei zuerst sichern und anschließend ersetzen oder entfernen.
 Das ehemalige xfComment-Projekt ist als Quellcode-Archiv unter
 `backups/xfcomment-before-integration.tar.gz` gesichert.
 
@@ -325,15 +336,24 @@ Im gemeinsamen Setup lassen sich beliebig viele benannte Textbausteine ergänzen
 [TextSnippets]
 text1="text1"
 text2="text2"
+mehrzeilig="Analysiere das Bild.
+Zähle die sichtbaren Bauteile.
+Gib eine Tabelle aus."
 ```
 
 „Textbaustein auswählen“ öffnet eine scrollbare Auswahl mit Namen und Inhalt.
 Ein Tipp kopiert nur den Inhalt (ohne die äußeren Anführungszeichen) in die
 Android-Zwischenablage. Im gewünschten Textfeld lange drücken und „Einfügen“
 wählen. Die Auswahl liest die aktuelle Konfiguration; Änderungen im Setup gelten
-sofort und für alle App-Profile. Jeder Eintrag steht auf einer eigenen Zeile und
-hat einen eindeutigen Namen. Gleichheitszeichen im Text und Leerzeichen innerhalb
-der Anführungszeichen bleiben erhalten.
+sofort und für alle App-Profile. Jeder Eintrag beginnt auf einer eigenen Zeile und
+hat einen eindeutigen Namen. Ein Wert in doppelten Anführungszeichen darf mehrere
+Zeilen umfassen. Das schließende Anführungszeichen steht am Ende der letzten
+Textzeile oder auf einer eigenen Zeile (dann endet der Wert mit einem Zeilenumbruch).
+Zeilenumbrüche, Leerzeilen, Gleichheitszeichen und Leerzeichen innerhalb des Werts
+bleiben erhalten. Auch Zeilen mit `#`, `;` oder `[Abschnitt]` gehören darin zum Text.
+Anführungszeichen im Text müssen paarweise auf derselben Zeile stehen, etwa
+`Bei Unsicherheit schreibe "?"`. Backslashes bleiben wörtlich erhalten; `\n`
+wird nicht umgewandelt. Ein fehlendes Schlusszeichen wird als Setup-Fehler gemeldet.
 
 Bei vorhandenen Installationen wird ein fehlender Abschnitt automatisch mit den
 beiden Beispielen ergänzt. Ein vorhandener, auch leerer Abschnitt bleibt erhalten.

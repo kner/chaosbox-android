@@ -82,7 +82,7 @@ public final class UploadService extends Service {
                         getSystemService(NotificationManager.class).notify(NOTIFICATION + 1,
                                 new Notification.Builder(this, CHANNEL)
                                         .setSmallIcon(android.R.drawable.stat_notify_error)
-                                        .setContentTitle("Lokal gespeichert; Synchronisierung fehlgeschlagen")
+                                        .setContentTitle("Lokal gespeichert; Hintergrundverarbeitung fehlgeschlagen")
                                         .setContentText(error).setStyle(new Notification.BigTextStyle().bigText(error))
                                         .setAutoCancel(true).build());
                     }

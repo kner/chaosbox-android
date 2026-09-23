@@ -9,8 +9,10 @@ import java.util.stream.Stream;
 /** Storage layout for one selected App profile. */
 final class StoragePaths {
     final File images, data, legacyImages, legacyData, index;
+    private final File uploadRoot;
 
     private StoragePaths(File storage, String imagePath, String dataPath, String profileId) throws IOException {
+        uploadRoot = new File(storage.getCanonicalFile(), "ChaosBox");
         images = resolve(storage, imagePath);
         File configuredData = resolve(storage, dataPath);
         File oldImages = new File(storage, "ChaosBox/JPG").getCanonicalFile();
@@ -115,6 +117,10 @@ final class StoragePaths {
         Set<File> all = new LinkedHashSet<>(files(data, false));
         all.addAll(files(legacyData, false));
         return new ArrayList<>(all);
+    }
+
+    boolean canUpload(File file) throws IOException {
+        return file.getCanonicalFile().toPath().startsWith(uploadRoot.toPath());
     }
 
     interface ImageCategory { String read(File image) throws Exception; }

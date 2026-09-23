@@ -29,7 +29,7 @@ final class AppSettings {
         } else {
             text = preferences(context).getString("setup-cache", null);
             if (text == null) {
-                try (InputStream in = context.getAssets().open("setup.ini");
+                try (InputStream in = context.getAssets().open(Config.SETUP_ASSET);
                      ByteArrayOutputStream out = new ByteArrayOutputStream()) {
                     byte[] buffer = new byte[4096]; int n;
                     while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
