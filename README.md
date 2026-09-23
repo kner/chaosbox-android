@@ -3,14 +3,70 @@
 Die App enthält jetzt die vollständige xfComment-Bildbearbeitung, JSON-Anzeige
 und den bisherigen SSH-Upload im Paket `local.sshcopy`.
 
+## Speicherpfade und Kategorieordner
+
+In `ChaosBox/Setup/setup.ini` werden die Basisordner konfiguriert:
+
+```ini
+[App]
+Standard=Chaosbox
+
+[App.Chaosbox]
+Titel=Chaosbox
+JPG=ChaosBox/JPG
+Daten=ChaosBox/boxes
+Felder=Box,Anzahl,Device,Alias,Kategorie,Kommentar,Package
+Kategorie=Heizung, Wasser, Elektro, Maurer
+```
+
+Relative Pfade beziehen sich auf den gemeinsamen internen Android-Speicher;
+absolute Pfade sind ebenfalls möglich. Jedes App-Profil definiert eigene Bild- und
+Datenpfade. Die Auswahl erfolgt durch Tippen auf den Titel (Details weiter unten).
+
+Bilder liegen unter `JPG/<kategorie>/`. Neue JSON-Boxen liegen direkt unter
+`boxes/`; bestehende Dateien in dessen Unterordnern bleiben dort.
+Der Kategoriename wird kleingeschrieben; eine fehlende Kategorie ergibt `unassigned`.
+Beispiel: `Elektronik > Stromversorgung` wird zu `elektronik`.
+Bei mehreren Kategorien wird vorläufig die erste verwendet. Eine Box mit mehreren
+Datensätzen bleibt vollständig erhalten und verwendet die erste nichtleere Kategorie.
+
+`[ImageSize]` mit `LIMIT=3000` legt die maximale längere Bildkante in Pixeln fest.
+Fehlt der Abschnitt, gilt 3000. Kleinere JPGs behalten ihre Bilddaten; beim Speichern
+wird lediglich der UserComment aktualisiert. Die bisherige Dateigrößengrenze entfällt.
+PNG-Dateien werden als JPG mit derselben Pixelgrenze gespeichert; kleinere Bilder
+werden nicht vergrößert. Transparenz wird auf weißem Hintergrund aufgelöst.
+Das PNG-Original bleibt erhalten, auch wenn es im konfigurierten Bildordner liegt.
+Die Bildvorschau zeigt das vollständige Bild im Seitenverhältnis ohne feste
+Höhenbegrenzung; hohe Bilder lassen sich nach unten scrollen.
+
+Beim nächsten App-Start werden vorhandene Bilder nach Kategorie in Unterordner
+von `JPG` einsortiert. JSON-Dateien werden weder nach Kategorie verschoben noch
+umbenannt. Die App liest `boxes` rekursiv, einschließlich aller Unterordner.
+Dateien, die eine frühere Version nach `daten` verschoben hat, bleiben an ihrem
+Speicherort lesbar und werden nicht erneut verschoben. Die Dateiinhalte und
+Änderungszeiten bleiben erhalten. Namenskollisionen bei JPGs überschreiben keine
+Dateien; die App meldet stehen gebliebene Quellen. Der Suchindex bleibt getrennt
+unter `ChaosBox/data/records.json`. Fehlende mitgelieferte JPG- und
+Box-Dateien werden beim ersten Start dieser Version einmalig ergänzt. Bereits
+vorhandene Dateien, auch in Unterordnern, werden nicht überschrieben oder verdoppelt.
+
+Öffnen, Suche und Upload berücksichtigen die vorhandenen Unterordner. Bei
+gleichnamigen Box-Dateien muss die gewünschte Datei über den JSON-Dateidialog
+gewählt werden. Dazu das Feld `Box` leeren und auf „JSON öffnen“ tippen.
+Der spätere Upload erhält die vorhandenen Unterordner auch im Server-Zielverzeichnis;
+fehlende Ordner werden dort angelegt. Die Server-Basisordner müssen bereits existieren.
+
+Die folgenden älteren Pfadangaben werden durch diese Konfiguration ersetzt.
+
 ## Bedienung
 
-Die Startansicht ermöglicht die JPG-Auswahl, Box/Kategorie/Kommentar-Eingabe,
+Die Startansicht ermöglicht die JPG-/PNG-Auswahl, Box/Kategorie/Kommentar-Eingabe,
 EXIF-UserComment-Metadaten und das Speichern. Neue Bilder von außerhalb des JPG-Ordners
-werden als auf maximal 100 kB reduzierte Bildkopie importiert. Bilder aus
-`ChaosBox/JPG` werden unter demselben Dateinamen atomar überschrieben, ohne
-`_cb`-Zusatz und ohne erneute Komprimierung oder Größenbegrenzung. Dabei bleiben
-Bilddaten und andere EXIF-Metadaten erhalten. Kommentare werden als UTF-8 mit
+werden bei Bedarf auf höchstens 3000 Pixel an der längeren Seite reduziert. Bilder aus
+dem konfigurierten JPG-Ordner werden unter demselben Dateinamen atomar
+überschrieben, ohne `_cb`-Zusatz. JPGs bis zum eingestellten Pixel-LIMIT werden
+nicht neu komprimiert; ihre Bilddaten und andere EXIF-Metadaten bleiben erhalten.
+Größere JPGs werden auf die eingestellte längere Bildkante reduziert. Kommentare werden als UTF-8 mit
 undefiniertem EXIF-Zeichensatzpräfix gespeichert; ältere ASCII- und Unicode-Kommentare
 bleiben lesbar. Vorhandene Metadaten werden beim Öffnen übernommen.
 
@@ -18,9 +74,10 @@ bleiben lesbar. Vorhandene Metadaten werden beim Öffnen übernommen.
 - Konfiguration: `/storage/emulated/0/ChaosBox/Setup/setup.ini`
 - JSON-Datensätze: `/storage/emulated/0/ChaosBox/boxes`
 
-Die Kategorie-Liste wird aus dem INI-Abschnitt `[Kategorie]` geladen. Fehlt die
-Datei, wird nach Erteilung des Speicherzugriffs die mitgelieferte Vorlage angelegt.
-Eine bestehende Konfigurationsdatei wird nicht überschrieben. Gleichnamige neu importierte
+Die Kategorie-Liste wird aus `Kategorie=` des gewählten `[App.Name]`-Abschnitts geladen.
+Ein Wechsel des App-Profils zeigt dessen eigene Kategorien. Fehlt die Datei, wird nach
+Erteilung des Speicherzugriffs die mitgelieferte Vorlage angelegt.
+Eine bestehende Konfigurationsdatei wird bei der nötigen Umstellung atomar aktualisiert. Gleichnamige neu importierte
 Bilder erhalten eine nummerierte Kopie. Android 11+ benötigt Zugriff auf alle Dateien.
 
 Nach jedem erfolgreichen Speichern eines Bilds oder JSON-Datensatzes startet
@@ -43,7 +100,7 @@ Datensatz wird ein bestehendes Device aktualisiert oder ein neues Device angeleg
 und das ursprüngliche Erstellungsdatum bleiben erhalten; count/anzahl und pack/package
 werden beim Aktualisieren konsistent gehalten.
 
-Beim automatischen Upload werden Unterordner ausgelassen;
+Beim automatischen Upload bleiben die Unterordner von JPG und boxes erhalten.
 Bilder aus JPG und JSON-Dateien aus boxes werden in den konfigurierten
 Server-Zielordner hochgeladen, wenn sie fehlen oder lokal neuer sind. Gleich alte
 oder neuere Serverdateien bleiben erhalten. Verglichen wird die Änderungszeit
@@ -196,3 +253,87 @@ angezeigt, sofern vorhanden; gespeichert wird weiterhin ein JSON-Datensatz.
 Suchfelder: Alias und Kommentar durchsuchen jeweils Device, Alias und Kommentar.
 Device durchsucht Device und Kommentar; Kategorie durchsucht Kategorie und Kommentar. Pro Eingabe genügt ein Treffer in
 einem dieser Zielfelder; mehrere ausgefüllte Suchfelder bleiben UND-verknüpft.
+
+
+### App-Profile und Feldüberschriften
+
+Die gemeinsame Datei `ChaosBox/Setup/setup.ini` unterstützt beliebig viele
+Abschnitte `[App.Name]`. `[App]` kann mit `Standard=Chaosbox` das anfängliche
+Profil festlegen; sonst wird der erste App-Unterabschnitt verwendet.
+
+```ini
+[App]
+Standard=Chaosbox
+
+[App.Chaosbox]
+Titel=Chaosbox
+JPG=ChaosBox/JPG
+Daten=ChaosBox/boxes
+Felder=Box,Anzahl,Device,Alias,Kategorie,Kommentar,Package
+Kategorie=Heizung, Wasser, Elektro, Maurer
+
+[App.Bilderbox]
+Titel=Bilderbox
+JPG=Bilderbox/JPG
+Daten=Bilderbox/boxes
+Felder=Box,,,Tags,Kategorie,Kommentar
+Kategorie=Fotos, Gemälde, Dokumente
+```
+
+Ein Tippen auf den Titel öffnet die Profilauswahl. Die Auswahl bleibt über
+App-Neustarts erhalten. Ein Wechsel setzt das geöffnete Formular zurück und
+verwendet die Bild- und JSON-Ordner des gewählten Profils. Ungespeicherte Eingaben
+sollten vorher gespeichert werden. Laufende Uploads behalten ihre ursprünglichen
+Quellpfade. Die konfigurierten Server-Zielpfade bleiben gemeinsam.
+
+`JPG` (alternativ `Bilder`) und `Daten` sind relativ zum gemeinsamen internen
+Speicher oder absolut. Profile benötigen getrennte Ordner. Nur JPG-Dateien werden
+nach Kategorie in kleingeschriebene Unterordner bzw. `unassigned` einsortiert.
+JSON-Dateien bleiben im jeweiligen `boxes`-Ordner oder dessen Unterordnern.
+Frühere Standardangaben `Daten=ChaosBox/daten` und `Daten=Bilderbox/daten` werden
+auf `boxes` umgestellt; bereits dorthin verschobene Dateien bleiben zusätzlich lesbar.
+
+`Felder` hat sieben feste Positionen: Box, Anzahl, Device, Alias, Kategorie,
+Kommentar, Package. Leere Positionen und fehlende Positionen am Ende blenden
+Überschrift und Eingabe aus. Im Beispiel heißt Alias nun Tags; Anzahl, Device
+und Package sind verborgen. Fehlt die ganze `Felder`-Zeile, sind alle sieben
+Standardfelder sichtbar. Die JSON-Schlüssel bleiben unverändert; verborgene
+Werte eines geöffneten Datensatzes bleiben erhalten.
+
+Bestehende `[Pfade]`-Dateien werden weiterhin gelesen und beim Öffnen/Speichern
+der Setup-Datei in ein `[App.Chaosbox]`-Profil überführt. Eigene Pfade bleiben erhalten.
+
+
+Der bisherige globale `[Kategorie]`-Abschnitt wird beim Öffnen einer älteren
+`setup.ini` entfernt. Seine Einträge werden in jedes Profil ohne eigene
+`Kategorie=`-Zeile übernommen. Bereits profilbezogene Kategorien bleiben erhalten.
+Eine leere Zeile `Kategorie=` erzeugt nur den Platzhalter „Ohne Kategorie“.
+
+
+Ist beim Tippen auf „JSON öffnen“ das Feld `Box` leer,
+öffnet die App den Android-Dateidialog wie bei der Bildauswahl, möglichst direkt
+im `Daten`-Ordner (`boxes`) des aktiven Profils. Ausgewählt werden können
+JSON-Dateien innerhalb dieses Ordners und seiner Unterordner. Die ausgewählte Datei
+wird am ursprünglichen Speicherort geöffnet und weiterbearbeitet.
+
+
+## Textbausteine und Zwischenablage
+
+Im gemeinsamen Setup lassen sich beliebig viele benannte Textbausteine ergänzen:
+
+```ini
+[TextSnippets]
+text1="text1"
+text2="text2"
+```
+
+„Textbaustein auswählen“ öffnet eine scrollbare Auswahl mit Namen und Inhalt.
+Ein Tipp kopiert nur den Inhalt (ohne die äußeren Anführungszeichen) in die
+Android-Zwischenablage. Im gewünschten Textfeld lange drücken und „Einfügen“
+wählen. Die Auswahl liest die aktuelle Konfiguration; Änderungen im Setup gelten
+sofort und für alle App-Profile. Jeder Eintrag steht auf einer eigenen Zeile und
+hat einen eindeutigen Namen. Gleichheitszeichen im Text und Leerzeichen innerhalb
+der Anführungszeichen bleiben erhalten.
+
+Bei vorhandenen Installationen wird ein fehlender Abschnitt automatisch mit den
+beiden Beispielen ergänzt. Ein vorhandener, auch leerer Abschnitt bleibt erhalten.

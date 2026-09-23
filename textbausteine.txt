@@ -1,0 +1,39 @@
+
+[TextSnippets]
+ChatGpt=Technische Daten in Kurzform, mit created und modified Datum, die Teile kategorisieren, stückzahl bestimmen, als json mit Feldern created, modified, box,count,category, comment abspeichern
+text2="text2"
+
+
+User Comment                    : {"created":"2026-09-17T18:40:53.029063+02:00","modified":"2026-09-17T18:40:53.029063+02:00","box":"drr","category":"El-Baugruppen","comment":"Kategorie: Computertechnik > Datenspeicher > SSD; Samsung 850 EVO; 250 GB; P\/N MZ7LN250; Model MZ-75E250; SATA 2,5-Zoll SSD; Rated DC 5,0 V \/ 1,4 A."}
+
+
+
+# Beispiel-Setupdatei für EXIF UserComment
+[App]
+Standard=Chaosbox
+
+
+[App.Chaosbox]
+Titel=Chaosbox
+JPG=ChaosBox/JPG
+Daten=ChaosBox/boxes
+Felder=Box,Anzahl,Device,Alias,Kategorie,Kommentar,Package
+Kategorie=Heizung, Wasser, Elektro, Maurer, Fliesen, Garten, Elektronikbauteile, El-Baugruppen, Haushalt
+
+[App.Bilderbox]
+Titel=Bilderbox
+JPG=Bilderbox/JPG
+Daten=Bilderbox/boxes
+Felder=Box,,,Tags,Kategorie,Kommentar
+Kategorie=Berg, Erlerberg,Familie, Vater, Mutter, Simon, Lukas, pauli David
+
+[ImageSize]
+LIMIT=3000
+
+[TextSnippets]
+ChatGpt=Technische Daten in Kurzform, kategorisieren, stückzahlen, als json mit Feldern Anzahl, Kategorie und kommentar
+text2="text2"
+
+
+--
+Gesendet mit der 1&1 Mail App

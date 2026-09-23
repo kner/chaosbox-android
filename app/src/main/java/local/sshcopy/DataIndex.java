@@ -32,7 +32,18 @@ final class DataIndex {
         List<Entry> entries = new ArrayList<>();
         collect(new File(root, "JPG"), true, reader, entries);
         collect(new File(root, "boxes"), false, reader, entries);
-        Path directory = new File(root, "data").toPath();
+        return writeIndex(new File(root, "data"), entries);
+    }
+
+    static List<Entry> rebuild(StoragePaths paths, ImageMetadata reader) throws IOException {
+        List<Entry> entries = new ArrayList<>();
+        for (File file : paths.imageFiles()) collectFile(file.toPath(), true, reader, entries);
+        for (File file : paths.jsonFiles()) collectFile(file.toPath(), false, reader, entries);
+        return writeIndex(paths.index, entries);
+    }
+
+    private static List<Entry> writeIndex(File folder, List<Entry> entries) throws IOException {
+        Path directory = folder.toPath();
         Files.createDirectories(directory);
         Path target = directory.resolve("records.json");
         if (Files.isSymbolicLink(target)) throw new IOException("Datendatei darf kein symbolischer Link sein.");
@@ -61,23 +72,28 @@ final class DataIndex {
             for (Path path : files) {
                 String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
                 if (images ? !(name.endsWith(".jpg") || name.endsWith(".jpeg")) : !name.endsWith(".json")) continue;
-                try {
-                    if (images) {
-                        entries.add(new Entry(reader.read(path.toFile()), path.toFile(), true));
-                    } else {
-                        String raw = LocalData.read(path.toFile());
-                        if (raw.trim().equals("[]")) continue;
-                        for (JSONObject record : BoxRecords.parseRecords(raw)) {
-                            if (record.optString("box", "").isEmpty()) {
-                                record.put("box", path.getFileName().toString().replaceFirst("(?i)\\.json$", ""));
-                            }
-                            entries.add(new Entry(record, path.toFile(), false));
-                        }
+                collectFile(path, images, reader, entries);
+            }
+        }
+    }
+
+    private static void collectFile(Path path, boolean images, ImageMetadata reader, List<Entry> entries)
+            throws IOException {
+        try {
+            if (images) {
+                entries.add(new Entry(reader.read(path.toFile()), path.toFile(), true));
+            } else {
+                String raw = LocalData.read(path.toFile());
+                if (raw.trim().equals("[]")) return;
+                for (JSONObject record : BoxRecords.parseRecords(raw)) {
+                    if (record.optString("box", "").isEmpty()) {
+                        record.put("box", path.getFileName().toString().replaceFirst("(?i)\\.json$", ""));
                     }
-                } catch (Exception e) {
-                    throw new IOException("Datendatei: " + path.getFileName() + ": " + e.getMessage(), e);
+                    entries.add(new Entry(record, path.toFile(), false));
                 }
             }
+        } catch (Exception e) {
+            throw new IOException("Datendatei: " + path.getFileName() + ": " + e.getMessage(), e);
         }
     }
 

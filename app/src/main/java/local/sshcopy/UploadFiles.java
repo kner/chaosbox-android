@@ -1,7 +1,6 @@
 package local.sshcopy;
 
 import android.content.Context;
-import android.os.Environment;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
@@ -13,10 +12,12 @@ import java.util.function.Consumer;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 final class UploadFiles {
+    private final StoragePaths paths;
     private final Context context;
     private final Consumer<String> log;
 
-    UploadFiles(Context context, Consumer<String> log) {
+    UploadFiles(Context context, Consumer<String> log, StoragePaths paths) {
+        this.paths = paths;
         this.context = context.getApplicationContext();
         this.log = log;
     }
@@ -47,16 +48,18 @@ final class UploadFiles {
         try {
             show("los gehts\n");
             java.util.Map<File, String> files = new java.util.LinkedHashMap<>();
-            File storage = Environment.getExternalStorageDirectory();
-            for (String path : new String[]{Config.SOURCE, Config.BOXES}) {
-                File folder = new File(storage, path);
-                if (!folder.exists()) { show("Ordner fehlt: " + path); continue; }
-                for (File file : SourceFiles.list(folder)) {
-                    if (file.getName().startsWith(".save-") && file.getName().endsWith(".tmp")) continue;
-                    if (path.equals(Config.BOXES)
-                            && !file.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".json")) continue;
-                    files.put(file, path.equals(Config.BOXES) ? Config.JSON_DESTINATION : Config.IMAGE_DESTINATION);
-                }
+            for (File file : paths.imageFiles()) {
+                String subfolder = remoteSubfolder(file, paths.images, paths.legacyImages);
+                files.put(file, Config.IMAGE_DESTINATION + subfolder);
+            }
+            for (File file : paths.jsonFiles()) {
+                String subfolder = remoteSubfolder(file, paths.data, paths.legacyData);
+                files.put(file, Config.JSON_DESTINATION + subfolder);
+            }
+            java.util.Set<String> targets = new java.util.HashSet<>();
+            for (java.util.Map.Entry<File, String> entry : files.entrySet()) {
+                if (!targets.add(entry.getValue() + "/" + entry.getKey().getName()))
+                    throw new IOException("Mehrere lokale Dateien haben dasselbe Upload-Ziel: " + entry.getKey().getName());
             }
             if (files.isEmpty()) { show("Keine Dateien zum Hochladen."); return; }
             Security.removeProvider("BC");
@@ -79,7 +82,20 @@ final class UploadFiles {
                 if (!destination.equals(currentDestination)) {
                     sftp.cd(remoteHome);
                     try {
-                        sftp.cd(destination);
+                        String base = destination.startsWith(Config.IMAGE_DESTINATION)
+                                ? Config.IMAGE_DESTINATION : Config.JSON_DESTINATION;
+                        sftp.cd(base);
+                        if (!destination.equals(base)) {
+                            String folder = destination.substring(base.length() + 1);
+                            for (String part : folder.split("/")) {
+                                try { sftp.cd(escape(part)); }
+                                catch (com.jcraft.jsch.SftpException missing) {
+                                    if (missing.id != ChannelSftp.SSH_FX_NO_SUCH_FILE) throw missing;
+                                    sftp.mkdir(part);
+                                    sftp.cd(escape(part));
+                                }
+                            }
+                        }
                     } catch (com.jcraft.jsch.SftpException e) {
                         throw new IOException("Zielordner nicht erreichbar: " + destination + " — " + e.getMessage(), e);
                     }
@@ -105,7 +121,7 @@ final class UploadFiles {
                     copied++;
                 }
             }
-            show("Done. Copied " + copied + " file(s).\nSubdirectories were skipped.");
+            show("Done. Copied " + copied + " file(s).\nKategorieordner wurden berücksichtigt.");
         } catch (Exception e) {
             throw new IOException("Upload nach " + copied + " Datei(en) abgebrochen: " + e.getMessage(), e);
         } finally {
@@ -116,6 +132,15 @@ final class UploadFiles {
                 session.disconnect();
             }
         }
+    }
+
+    private static String remoteSubfolder(File file, File primary, File legacy) throws IOException {
+        java.nio.file.Path parent = file.getCanonicalFile().getParentFile().toPath();
+        java.nio.file.Path root = parent.startsWith(primary.toPath())
+                ? primary.toPath() : legacy.toPath();
+        if (!parent.startsWith(root)) throw new IOException("Datei außerhalb des Datenordners: " + file);
+        String relative = root.relativize(parent).toString().replace(File.separatorChar, '/');
+        return relative.isEmpty() ? "" : "/" + relative;
     }
 
     private static String escape(String name) {

@@ -16,6 +16,7 @@ import java.io.*;
 
 public final class MainActivity extends Activity {
 
+    private AppSettings.Selection selection;
     private TextView status;
     private TextView recordsView;
     private boolean started;
@@ -24,6 +25,8 @@ public final class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        try { selection = AppSettings.load(this); setTitle(selection.profile.title); }
+        catch (IOException e) { android.widget.Toast.makeText(this, e.getMessage(), android.widget.Toast.LENGTH_LONG).show(); finish(); return; }
         status = new TextView(this);
         status.setTextSize(18);
         status.setPadding(32, 64, 32, 32);
@@ -35,7 +38,7 @@ public final class MainActivity extends Activity {
         recordsView.setTextSize(16);
         recordsView.setPadding(24, 24, 24, 24);
         recordsView.setTextIsSelectable(true);
-        recordsView.setText("ChaosBox wird geladen …");
+        recordsView.setText(selection.profile.title + " wird geladen …");
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         scroll.addView(recordsView);
         layout.addView(scroll, new android.widget.LinearLayout.LayoutParams(-1, 0, 2));
@@ -48,7 +51,7 @@ public final class MainActivity extends Activity {
     @Override
     public void onResume() {
         super.onResume();
-        if (started) {
+        if (selection == null || started) {
             return;
         }
         boolean allowed = Build.VERSION.SDK_INT >= 30 ? Environment.isExternalStorageManager()
@@ -113,7 +116,7 @@ public final class MainActivity extends Activity {
         }
         int count = 0;
         try {
-            for (File file : SourceFiles.list(new File(storage, Config.BOXES))) {
+            for (File file : selection.paths.jsonFiles()) {
                 if (!file.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".json")) continue;
                 try {
                     java.util.List<String> records = LocalData.records(LocalData.read(file));
@@ -135,7 +138,7 @@ public final class MainActivity extends Activity {
 
     private void copy() {
         try {
-            new UploadFiles(this, this::show).copy();
+            new UploadFiles(this, this::show, selection.paths).copy();
         } catch (IOException e) {
             show(e.getMessage());
         } finally {

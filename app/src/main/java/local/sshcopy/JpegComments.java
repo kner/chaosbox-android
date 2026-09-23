@@ -34,6 +34,38 @@ final class JpegComments {
         return splice(jpeg, 2, 2, newSegment);
     }
 
+    /** Retain existing EXIF tags when pixels are resized; orientation is baked into the new pixels. */
+    static byte[] resizedExifSegment(byte[] jpeg, String comment, byte[] fallback) throws IOException {
+        int p = 2;
+        while (p + 4 <= jpeg.length) {
+            if ((jpeg[p] & 255) != 255) throw new IOException("Ungültiges JPG-Segment");
+            int marker = jpeg[p + 1] & 255;
+            if (marker == 218 || marker == 217) break;
+            int length = ((jpeg[p + 2] & 255) << 8) | (jpeg[p + 3] & 255);
+            if (length < 2 || p + 2 + length > jpeg.length) throw new IOException("Ungültige JPG-Länge");
+            if (marker == 225 && length >= 16 && jpeg[p+4]=='E' && jpeg[p+5]=='x'
+                    && jpeg[p+6]=='i' && jpeg[p+7]=='f' && jpeg[p+8]==0 && jpeg[p+9]==0) {
+                byte[] tiff = Arrays.copyOfRange(jpeg, p + 10, p + 2 + length);
+                byte[] updated = updateTiff(tiff, comment);
+                ByteBuffer tags = ByteBuffer.wrap(updated).order(updated[0] == 'I'
+                        ? ByteOrder.LITTLE_ENDIAN : ByteOrder.BIG_ENDIAN);
+                int orientation = entry(tags, tags.getInt(4), 0x0112);
+                if (orientation >= 0 && (tags.getShort(orientation + 2) & 65535) == 3
+                        && tags.getInt(orientation + 4) == 1)
+                    tags.putShort(orientation + 8, (short) 1);
+                ByteArrayOutputStream segment = new ByteArrayOutputStream();
+                segment.write(255); segment.write(225);
+                int size = updated.length + 8;
+                if (size > 65535) throw new IOException("Kommentar ist zu lang");
+                segment.write(size >> 8); segment.write(size & 255);
+                segment.write(new byte[]{'E','x','i','f',0,0}); segment.write(updated);
+                return segment.toByteArray();
+            }
+            p += 2 + length;
+        }
+        return fallback;
+    }
+
     private static byte[] splice(byte[] bytes, int start, int end, byte[] replacement) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         out.write(bytes, 0, start); out.write(replacement);

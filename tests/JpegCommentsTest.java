@@ -71,6 +71,19 @@ public final class JpegCommentsTest {
                 check(read(result).equals("kurz"),"Shorter comment failed");
             }
         }
+        byte[] resizedSource = join(soi, exif(ByteOrder.LITTLE_ENDIAN, false, false), image);
+        byte[] retained = JpegComments.resizedExifSegment(resizedSource, comment, segment(comment));
+        ByteBuffer tiff = ByteBuffer.wrap(retained, 10, retained.length - 10).slice()
+                .order(ByteOrder.LITTLE_ENDIAN);
+        int ifd = tiff.getInt(4);
+        boolean upright = false;
+        for (int i = 0, count = tiff.getShort(ifd) & 65535; i < count; i++) {
+            int entry = ifd + 2 + i * 12;
+            if ((tiff.getShort(entry) & 65535) == 0x0112)
+                upright = tiff.getShort(entry + 8) == 1;
+        }
+        check(upright, "Resized JPEG retains EXIF with orientation 1");
+        check(read(join(soi, retained, image)).equals(comment), "Resized JPEG comment missing");
         byte[] fresh=JpegComments.update(join(soi,app2,image),comment,segment(comment));
         check(read(fresh).equals(comment),"No EXIF insert failed");
         check(new String(segment(comment),StandardCharsets.ISO_8859_1)
