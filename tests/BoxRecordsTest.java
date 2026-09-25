@@ -12,9 +12,22 @@ public final class BoxRecordsTest {
             File first = BoxRecords.save(dir, "Box 7", "{\"anzahl\":0,\"comment\":\"Grüße\"}");
             File second = BoxRecords.save(dir, "Box 7", "{\"anzahl\":3}");
             JSONArray records = new JSONArray(read(first));
-            if (!first.equals(second) || !first.getName().equals("Box 7.json") || records.length()!=1
+            if (!first.equals(second) || !first.getName().equals("box 7.json") || records.length()!=1
                     || !records.getJSONObject(0).getString("comment").equals("Grüße")
                     || records.getJSONObject(0).getInt("anzahl")!=3) throw new AssertionError("Update failed");
+            File lowercase = BoxRecords.save(dir, "A11", "{\"device\":\"A\",\"anzahl\":1}");
+            if (!lowercase.getName().equals("a11.json")) throw new AssertionError("Lowercase filename expected");
+            BoxRecords.save(dir, "a11.JSON", "{\"device\":\"A\",\"anzahl\":2}");
+            if (BoxRecords.load(dir, "A11.JSON").get(0).getInt("anzahl") != 2
+                    || BoxRecords.load(dir, "a11").size() != 1
+                    || new File(dir, "A11.json").exists())
+                throw new AssertionError("Case-insensitive box update/load failed");
+            java.util.Locale previousLocale = java.util.Locale.getDefault();
+            try {
+                java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"));
+                if (!BoxRecords.filename(" I11.JSON ").equals("i11.json"))
+                    throw new AssertionError("Filename depends on device locale");
+            } finally { java.util.Locale.setDefault(previousLocale); }
             File legacy = new File(dir, "old.json");
             Files.write(legacy.toPath(), "{\"old\":true}".getBytes(StandardCharsets.UTF_8));
             BoxRecords.save(dir, "old", "{}");

@@ -97,14 +97,24 @@ final class StoragePaths {
         if (!Files.exists(root.toPath(), LinkOption.NOFOLLOW_LINKS)) return result;
         if (!Files.isDirectory(root.toPath(), LinkOption.NOFOLLOW_LINKS))
             throw new IOException("Kein Datenordner: " + root);
-        try (Stream<Path> paths = Files.walk(root.toPath(), image ? 2 : Integer.MAX_VALUE)) {
+        try (Stream<Path> paths = Files.walk(root.toPath())) {
             paths.filter(f -> Files.isRegularFile(f, LinkOption.NOFOLLOW_LINKS)).sorted().forEach(f -> {
                 String name = f.getFileName().toString().toLowerCase(Locale.ROOT);
                 if (image ? name.endsWith(".jpg") || name.endsWith(".jpeg") : name.endsWith(".json"))
                     result.add(f.toFile());
             });
+        } catch (java.io.UncheckedIOException e) {
+            throw new IOException("Datenordner konnte nicht vollständig gelesen werden: " + root, e.getCause());
         }
         return result;
+    }
+
+    String displayPath(File file) {
+        for (File root : new File[]{images, data, legacyData}) {
+            if (file.toPath().startsWith(root.toPath()))
+                return root.getName() + "/" + root.toPath().relativize(file.toPath()).toString().replace(File.separatorChar, '/');
+        }
+        return file.getName();
     }
 
     List<File> imageFiles() throws IOException {
@@ -128,6 +138,8 @@ final class StoragePaths {
     synchronized List<String> migrate(ImageCategory reader) throws IOException {
         List<String> warnings = new ArrayList<>();
         for (File image : imageFiles()) {
+            // Keep existing folder organization; migrate only loose images in the root.
+            if (!image.getParentFile().equals(images)) continue;
             try { moveToCategory(image, true, reader.read(image)); }
             catch (Exception e) { warnings.add(image.getName() + ": " + e.getMessage()); }
         }
@@ -144,8 +156,7 @@ final class StoragePaths {
     }
 
     File findBox(String name, String category) throws IOException {
-        BoxRecords.validateName(name);
-        String filename = name.endsWith(".json") ? name : name + ".json";
+        String filename = BoxRecords.filename(name);
         File preferred = new File(data, filename);
         List<File> matches = new ArrayList<>();
         for (File file : jsonFiles()) if (file.getName().equals(filename)) matches.add(file);

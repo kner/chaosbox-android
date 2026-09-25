@@ -16,7 +16,7 @@ public final class DataIndexTest {
             Files.createSymbolicLink(root.resolve("JPG/link.jpg"), root.resolve("JPG/sub/photo.JPG"));
             Files.write(root.resolve("boxes/Box7.json"), ("[{\"device\":\"Sensor\",\"anzahl\":2,\"comment\":\"Grüße\"},"
                     + "{\"device\":\"Other\",\"anzahl\":5}]").getBytes(StandardCharsets.UTF_8));
-            DataIndex.ImageMetadata reader = file -> new JSONObject("{\"box\":\"Box7\",\"device\":\"Sensor\",\"path\":\"wrong\"}");
+            DataIndex.ImageMetadata reader = file -> new JSONObject("{\"box\":\"BOX7\",\"device\":\"Sensor\",\"path\":\"wrong\"}");
             List<DataIndex.Entry> entries = DataIndex.rebuild(root.toFile(), reader);
             check(entries.size() == 3, "Recursive sources, symlink exclusion or multi-record loading");
             JSONArray index = new JSONArray(LocalData.read(root.resolve("data/records.json").toFile()));
@@ -71,6 +71,21 @@ public final class DataIndexTest {
             Files.delete(root.resolve("JPG/sub/photo.JPG"));
             Files.delete(root.resolve("boxes/Box7.json"));
             check(DataIndex.rebuild(root.toFile(), reader).isEmpty(), "Empty catalogue");
+            Path deep = root.resolve("JPG/elektronik/sensoren/temperatur/photo.JPG");
+            Path other = root.resolve("JPG/other/photo.JPG");
+            Files.createDirectories(deep.getParent());
+            Files.createDirectories(other.getParent());
+            Files.write(deep, new byte[]{1});
+            Files.write(other, new byte[]{1});
+            StoragePaths profile = StoragePaths.snapshot(root.toFile(), "JPG", "boxes", "NestedTest");
+            List<DataIndex.Entry> nestedEntries = DataIndex.rebuild(profile, file ->
+                    new JSONObject().put("device", file.equals(deep.toFile()) ? "DeepSensor" : "OtherSensor"));
+            check(nestedEntries.size() == 2, "Active profile scans images at arbitrary depth");
+            List<DataIndex.Entry> deepHits = DataIndex.search(nestedEntries,
+                    DataIndex.compile(Collections.singletonMap("device", "^DeepSensor$")));
+            check(deepHits.size() == 1 && deepHits.get(0).source.equals(deep.toFile()),
+                    "Search resolves correct nested image with duplicate basename");
+            check(DataIndex.imageFor(deepHits.get(0), nestedEntries).equals(deep.toFile()), "Nested image preview source");
             System.out.println("PASS: catalogue, recursive scan, source paths, refresh, preservation, regex search and related image");
         } finally {
             try (java.util.stream.Stream<Path> paths = Files.walk(root)) {

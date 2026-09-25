@@ -15,6 +15,19 @@ final class UploadFiles {
     private final StoragePaths paths;
     private final Context context;
     private final Consumer<String> log;
+    private volatile boolean cancelled;
+    private volatile Session activeSession;
+
+    void cancel() {
+        cancelled = true;
+        Session connection = activeSession;
+        if (connection != null) connection.disconnect();
+    }
+
+    private void checkCancelled() throws IOException {
+        if (cancelled || Thread.currentThread().isInterrupted())
+            throw new IOException("Synchronisation abgebrochen. Bitte erneut manuell starten.");
+    }
 
     UploadFiles(Context context, Consumer<String> log, StoragePaths paths) {
         this.paths = paths;
@@ -35,7 +48,7 @@ final class UploadFiles {
                 }
             } catch (IOException e) {
                 file.delete();
-                throw new IOException("Missing " + name + ". Install credentials locally as described in README.md.");
+                throw new IOException("SSH-Zugangsdaten fehlen oder sind nicht lesbar: " + name + ". Einrichtung laut README prüfen.", e);
             }
         }
         return file;
@@ -45,8 +58,11 @@ final class UploadFiles {
         Session session = null;
         ChannelSftp sftp = null;
         int copied = 0;
+        int skipped = 0;
+        String stage = "Lokale Dateien vorbereiten";
         try {
-            show("los gehts\n");
+            checkCancelled();
+            show("Synchronisation wird gestartet.");
             java.util.Map<File, String> files = new java.util.LinkedHashMap<>();
             for (File file : paths.imageFiles()) {
                 if (!paths.canUpload(file)) continue;
@@ -64,48 +80,44 @@ final class UploadFiles {
                     throw new IOException("Mehrere lokale Dateien haben dasselbe Upload-Ziel: " + entry.getKey().getName());
             }
             if (files.isEmpty()) { show("Keine Dateien zum Hochladen."); return; }
+            checkCancelled();
+            stage = "SSH-Zugangsdaten laden";
             Security.removeProvider("BC");
             Security.addProvider(new BouncyCastleProvider());
             JSch ssh = new JSch();
             ssh.setKnownHosts(credential(Config.KNOWN_HOSTS_FILE).getAbsolutePath());
             ssh.addIdentity(credential(Config.KEY_FILE).getAbsolutePath());
             session = ssh.getSession(Config.USER, Config.HOST, Config.PORT);
+            activeSession = session;
+            checkCancelled();
             session.setConfig("StrictHostKeyChecking", "yes");
             session.setConfig("PreferredAuthentications", "publickey");
             session.setTimeout(30000);
+            stage = "SSH-Verbindung zu " + Config.HOST + ":" + Config.PORT + " herstellen";
+            show(stage);
             session.connect(15000);
+            checkCancelled();
+            stage = "SFTP-Verbindung öffnen";
             sftp = (ChannelSftp) session.openChannel("sftp");
             sftp.connect(15000);
             String remoteHome = sftp.pwd();
             String currentDestination = null;
             for (java.util.Map.Entry<File, String> entry : files.entrySet()) {
+                checkCancelled();
                 File file = entry.getKey();
                 String destination = entry.getValue();
+                stage = "Datei " + file.getName() + " → " + destination;
                 if (!destination.equals(currentDestination)) {
-                    sftp.cd(remoteHome);
                     try {
-                        String base = destination.startsWith(Config.IMAGE_DESTINATION)
-                                ? Config.IMAGE_DESTINATION : Config.JSON_DESTINATION;
-                        sftp.cd(base);
-                        if (!destination.equals(base)) {
-                            String folder = destination.substring(base.length() + 1);
-                            for (String part : folder.split("/")) {
-                                try { sftp.cd(escape(part)); }
-                                catch (com.jcraft.jsch.SftpException missing) {
-                                    if (missing.id != ChannelSftp.SSH_FX_NO_SUCH_FILE) throw missing;
-                                    sftp.mkdir(part);
-                                    sftp.cd(escape(part));
-                                }
-                            }
-                        }
+                        RemoteFiles.ensureDirectory(sftp, remoteHome, destination, this::show);
                     } catch (com.jcraft.jsch.SftpException e) {
-                        throw new IOException("Zielordner nicht erreichbar: " + destination + " — " + e.getMessage(), e);
+                        throw new IOException("Zielordner konnte nicht angelegt oder geöffnet werden: " + destination + " — " + e.getMessage(), e);
                     }
                     currentDestination = destination;
                 }
                 // Recheck before opening; never recurse or follow a source symlink.
                 if (!paths.canUpload(file) || !Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
-                    throw new IOException("Source changed: " + file.getName());
+                    throw new IOException("Quelldatei nicht mehr verfügbar oder verändert: " + file.getName());
                 }
 
                 String remote = escape(file.getName());
@@ -114,19 +126,42 @@ final class UploadFiles {
 
                 if (!skip) {
 
-                    show("Copying " + (copied + 1) + "/" + files.size() + "\n" + file.getName() + " → " + destination);
-                    try (InputStream in = Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
-                        sftp.put(in, remote, ChannelSftp.OVERWRITE);
+                    show("Hochladen: " + file.getName() + " → " + destination);
+                    // Publish only complete files. A cancelled transfer must not replace the server copy.
+                    String temporary = ".chaosbox-" + java.util.UUID.randomUUID() + ".upload";
+                    boolean published = false;
+                    try {
+                        try (InputStream in = Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
+                            sftp.put(in, temporary, new com.jcraft.jsch.SftpProgressMonitor() {
+                                public void init(int operation, String source, String target, long max) { }
+                                public boolean count(long count) { return !cancelled; }
+                                public void end() { }
+                            }, ChannelSftp.OVERWRITE);
+                        }
+                        checkCancelled();
+                        sftp.setMtime(temporary, (int) (sourceModified / 1000));
+                        sftp.rename(temporary, remote);
+                        published = true;
+                        copied++;
+                    } finally {
+                        if (!published && sftp.isConnected()) {
+                            try { sftp.rm(temporary); }
+                            catch (com.jcraft.jsch.SftpException cleanup) {
+                                show("Temporäre Serverdatei konnte nicht entfernt werden: " + temporary);
+                            }
+                        }
                     }
-                    // Preserve source time so the next run can reliably compare versions.
-                    sftp.setMtime(remote, (int) (sourceModified / 1000));
-                    copied++;
-                }
+                } else skipped++;
             }
-            show("Done. Copied " + copied + " file(s).\nKategorieordner wurden berücksichtigt.");
+            checkCancelled();
+            show("Abgeschlossen: " + copied + " Datei(en) hochgeladen, " + skipped
+                    + " unveränderte oder neuere Serverdatei(en) übersprungen.");
         } catch (Exception e) {
-            throw new IOException("Upload nach " + copied + " Datei(en) abgebrochen: " + e.getMessage(), e);
+            throw new IOException((cancelled ? "Synchronisation abgebrochen" : "Upload fehlgeschlagen")
+                    + " nach " + copied + " Datei(en).\nSchritt: " + stage
+                    + "\n" + UploadErrors.describe(e), e);
         } finally {
+            activeSession = null;
             if (sftp != null) {
                 sftp.disconnect();
             }

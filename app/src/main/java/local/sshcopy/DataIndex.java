@@ -139,7 +139,7 @@ final class DataIndex {
         String device = hit.data.optString("device", "");
         if (box.isEmpty()) return null;
         for (Entry entry : entries) {
-            if (entry.image && box.equals(entry.data.optString("box", ""))
+            if (entry.image && box.equalsIgnoreCase(entry.data.optString("box", ""))
                     && device.equals(entry.data.optString("device", ""))) return entry.source;
         }
         return null;

@@ -39,8 +39,8 @@ Das PNG-Original bleibt erhalten, auch wenn es im konfigurierten Bildordner lieg
 Die Bildvorschau zeigt das vollständige Bild im Seitenverhältnis ohne feste
 Höhenbegrenzung; hohe Bilder lassen sich nach unten scrollen.
 
-Beim nächsten App-Start werden vorhandene Bilder nach Kategorie in Unterordner
-von `JPG` einsortiert. JSON-Dateien werden weder nach Kategorie verschoben noch
+Beim nächsten App-Start werden lose Bilder direkt in `JPG` nach Kategorie
+in Unterordner einsortiert. Bereits in Unterordnern organisierte Bilder bleiben dort. JSON-Dateien werden weder nach Kategorie verschoben noch
 umbenannt. Die App liest `boxes` rekursiv, einschließlich aller Unterordner.
 Dateien, die eine frühere Version nach `daten` verschoben hat, bleiben an ihrem
 Speicherort lesbar und werden nicht erneut verschoben. Die Dateiinhalte und
@@ -50,11 +50,15 @@ unter `ChaosBox/data/records.json`. Fehlende mitgelieferte JPG- und
 Box-Dateien werden beim ersten Start dieser Version einmalig ergänzt. Bereits
 vorhandene Dateien, auch in Unterordnern, werden nicht überschrieben oder verdoppelt.
 
-Öffnen, Suche und Upload berücksichtigen die vorhandenen Unterordner. Bei
+„JPG öffnen“ zeigt alle JPG/JPEG-Dateien aus dem Bildordner des aktuellen Profils
+und sämtlichen Unterordnern, ohne Tiefenbegrenzung. Relative Pfade unterscheiden
+gleichnamige Dateien. „Andere Datei …“ öffnet die Android-Dateiauswahl zum Import
+weiterer JPG-/PNG-Dateien. Auch Suchtreffer zeigen ihren relativen Quellpfad.
+Öffnen, Suche und Upload berücksichtigen sämtliche vorhandenen Unterordner. Bei
 gleichnamigen Box-Dateien muss die gewünschte Datei über den JSON-Dateidialog
 gewählt werden. Dazu das Feld `Box` leeren und auf „JSON öffnen“ tippen.
 Der spätere Upload erhält die vorhandenen Unterordner auch im Server-Zielverzeichnis;
-fehlende Ordner werden dort angelegt. Die Server-Basisordner müssen bereits existieren.
+fehlende Ordner einschließlich der Server-Basisordner werden dort angelegt.
 
 Die folgenden älteren Pfadangaben werden durch diese Konfiguration ersetzt.
 
@@ -80,15 +84,23 @@ Erteilung des Speicherzugriffs die mitgelieferte Vorlage angelegt.
 Eine bestehende Konfigurationsdatei wird bei der nötigen Umstellung atomar aktualisiert. Gleichnamige neu importierte
 Bilder erhalten eine nummerierte Kopie. Android 11+ benötigt Zugriff auf alle Dateien.
 
-Nach jedem erfolgreichen Speichern eines Bilds oder JSON-Datensatzes startet
-ein Android-Vordergrunddienst mit Indexaktualisierung und Upload. Die Oberfläche ist
-bereits nach dem lokalen Speichern wieder bedienbar; der Dienst läuft unabhängig
-von der Editor-Activity. Weitere Speichervorgänge lösen einen erneuten Durchlauf aus,
-ohne parallele Uploads zu starten. Bei einem Uploadfehler bleiben die lokalen Daten erhalten;
-beim nächsten Speichern wird der Upload erneut versucht. Einen separaten Upload-Button gibt es nicht.
+„Speichern“ speichert ausschließlich lokal und startet keine Synchronisation.
+Der kleine Button „(c) kner“ unter dem Profiltitel startet den Upload manuell für
+das gewählte Profil. Nur bereits gespeicherte Dateien werden übertragen.
+Ein Dialog zeigt den Fortschritt und bleibt bei Fehlern mit der vollständigen
+Meldung geöffnet (Arbeitsschritt, Dateiname/Ziel und Ursache). Nach einem Fehler
+kann über denselben Button erneut gestartet werden. Währenddessen ist das Formular
+gesperrt. „Abbrechen“ oder Verlassen der App beendet die Übertragung; es gibt
+keinen Hintergrunddienst und keinen automatischen Wiederholungsversuch.
+Uploads werden zuerst in temporäre Serverdateien geschrieben und erst nach
+vollständiger Übertragung umbenannt. Bei Verbindungsabbruch kann eine `.upload`-
+Datei auf dem Server zurückbleiben; sie ist keine JPG-/JSON-Quelldatei.
+Der Server muss das Umbenennen über bestehende Dateien unterstützen; andernfalls
+erscheint ein SFTP-Fehler und die bisherige Serverdatei bleibt erhalten.
 
 „JSON öffnen“ lädt `ChaosBox/boxes/<Box>.json` anhand des Feldes Box (wahlweise
-mit `.json`-Endung). Unterstützt werden einzelne Datensätze, Arrays und Objekte
+mit `.json`-Endung). Groß-/Kleinschreibung der Eingabe spielt keine Rolle:
+`A11` öffnet und speichert `a11.json`; Box-Dateinamen werden kleingeschrieben. Unterstützt werden einzelne Datensätze, Arrays und Objekte
 mit mehreren Datensätzen unter eigenen Schlüsseln. Das editierbare Device-Feld
 listet die `device`-Werte auf; eine Auswahl lädt Anzahl, Box, Alias, Kategorie,
 Kommentar, Package und Erstellungsdatum des Datensatzes. Ein zuvor geöffnetes
@@ -100,7 +112,10 @@ Datensatz wird ein bestehendes Device aktualisiert oder ein neues Device angeleg
 und das ursprüngliche Erstellungsdatum bleiben erhalten; count/anzahl und pack/package
 werden beim Aktualisieren konsistent gehalten.
 
-Beim automatischen Upload bleiben die Unterordner von JPG und boxes erhalten.
+Beim manuellen Upload bleiben die Unterordner von JPG und boxes erhalten.
+Fehlende Server-Zielordner werden einschließlich aller übergeordneten Ordner
+automatisch angelegt. Jeder angelegte Ordner erscheint im Uploadprotokoll.
+Fehlende Schreibrechte oder andere Serverfehler werden im Dialog angezeigt.
 Die Übertragung erfolgt ausschließlich von der APK zum Server und nur für Dateien
 innerhalb von `/storage/emulated/0/ChaosBox`. Andere Profilordner wie `Bilderbox`
 werden nicht hochgeladen. Es gibt keinen Download, keinen Abgleich zurück zur APK
@@ -138,17 +153,12 @@ und Pfade gelten die Angaben oben.
 
 # SSH Copy for Android
 
-Opening the app automatically uploads the immediate regular files in
-`/storage/emulated/0/source` to `x@hostname:22`, directory `y` relative to the SSH
-user's home. The remote directory must already exist. Hidden files are included;
-subdirectories and symbolic links are skipped. Existing remote files of the same
-name are overwritten. Source files are never deleted. Transfers use SFTP over SSH.
-
-There is no Copy button, folder picker, or connection form. Android requires a
-one-time storage-access grant. Keep the app open until it reports completion.
-Opening a new app instance starts another transfer; it is not a boot/background scheduler.
-If interrupted, completed files remain copied and the current remote file may be
-partial; reopening copies the files again.
+Opening the app and saving records never start an upload. Tap the small
+“(c) kner” button to upload saved files from the selected profile. The transfer
+dialog displays progress and persistent error details. Keep the app open;
+leaving it cancels the transfer. Retry explicitly using the same button.
+Transfers use SFTP over SSH and preserve newer or unchanged server files.
+Only completed temporary uploads are renamed to their final server filenames.
 
 ## Hardcoded settings
 
@@ -294,8 +304,7 @@ Kategorie=Fotos, Gemälde, Dokumente
 Ein Tippen auf den Titel öffnet die Profilauswahl. Die Auswahl bleibt über
 App-Neustarts erhalten. Ein Wechsel setzt das geöffnete Formular zurück und
 verwendet die Bild- und JSON-Ordner des gewählten Profils. Ungespeicherte Eingaben
-sollten vorher gespeichert werden. Laufende Uploads behalten ihre ursprünglichen
-Quellpfade. Die konfigurierten Server-Zielpfade bleiben gemeinsam.
+sollten vorher gespeichert werden. Während eines Uploads ist der Profilwechsel gesperrt. Die konfigurierten Server-Zielpfade bleiben gemeinsam.
 
 `JPG` (alternativ `Bilder`) und `Daten` sind relativ zum gemeinsamen internen
 Speicher oder absolut. Profile benötigen getrennte Ordner. Nur JPG-Dateien werden

@@ -19,9 +19,14 @@ final class BoxRecords {
         }
     }
 
-    static java.util.List<JSONObject> load(File directory, String name) throws IOException {
+    static String filename(String name) throws IOException {
         validateName(name);
-        File file = new File(directory, name.endsWith(".json") ? name : name + ".json");
+        String normalized = name.trim().toLowerCase(java.util.Locale.ROOT);
+        return normalized.endsWith(".json") ? normalized : normalized + ".json";
+    }
+
+    static java.util.List<JSONObject> load(File directory, String name) throws IOException {
+        File file = new File(directory, filename(name));
         return parseRecords(LocalData.read(file));
     }
 
@@ -61,9 +66,9 @@ final class BoxRecords {
     }
 
     static synchronized File save(File directory, String name, String json, int selectedIndex) throws IOException {
-        validateName(name);
+        String filename = filename(name);
         Files.createDirectories(directory.toPath());
-        Path target = directory.toPath().resolve(name.endsWith(".json") ? name : name + ".json");
+        Path target = directory.toPath().resolve(filename);
         if (Files.isSymbolicLink(target)) throw new IOException("Box-Datei darf kein symbolischer Link sein.");
         JSONArray records = new JSONArray();
         try {

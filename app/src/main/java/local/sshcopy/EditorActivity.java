@@ -72,7 +72,9 @@ public class EditorActivity extends Activity {
     private EditText box;
     private android.widget.AutoCompleteTextView category;
     private EditText amount, alias, packageField;
-    private Button decreaseAmount, increaseAmount;
+    private Button decreaseAmount, increaseAmount, newEntry, synchronize;
+    private UploadFiles activeUpload;
+    private android.app.AlertDialog uploadDialog;
     private android.widget.AutoCompleteTextView device;
     private final List<DeviceRecord> deviceRecords = new ArrayList<>();
     private String openedBoxName;
@@ -151,6 +153,12 @@ public class EditorActivity extends Activity {
     }
 
     private void resetProfileForm() {
+        clearForm();
+        amount.setText("0");
+        indexInitialized = false;
+    }
+
+    private void clearForm() {
         searchMode = false;
         beforeSearch = null;
         beforeSearchImage = null;
@@ -170,10 +178,8 @@ public class EditorActivity extends Activity {
             else field.setText("");
             field.setError(null);
         }
-        amount.setText("0");
         showImage(null);
         selectedLabel.setText("Noch kein Bild oder Datensatz ausgewählt");
-        indexInitialized = false;
         refreshDevices();
         applyProfileLabels();
     }
@@ -235,7 +241,17 @@ public class EditorActivity extends Activity {
         profileTitle.setFocusable(true);
         profileTitle.setTooltipText("App-Profil auswählen");
         root.addView(profileTitle, matchWrap());
-        root.addView(text("(c) kner.at", 12, Color.DKGRAY), matchWrap());
+        synchronize = new Button(this);
+        synchronize.setText("(c) kner");
+        synchronize.setTextSize(12);
+        synchronize.setAllCaps(false);
+        synchronize.setMinWidth(0);
+        synchronize.setMinimumWidth(0);
+        synchronize.setPadding(dp(10), 0, dp(10), 0);
+        synchronize.setContentDescription("(c) kner – manuell synchronisieren");
+        synchronize.setTooltipText("Gespeicherte Dateien jetzt hochladen");
+        synchronize.setOnClickListener(v -> synchronizeManually());
+        root.addView(synchronize, new LinearLayout.LayoutParams(-2, dp(48)));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         choose = icon(actions, android.R.drawable.ic_menu_gallery, "JPG oder PNG auswählen", v -> chooseImage());
@@ -263,7 +279,33 @@ public class EditorActivity extends Activity {
         preview.setAdjustViewBounds(true);
         preview.setBackgroundColor(Color.LTGRAY);
 
-        addFieldTitle(root, "Box", 0);
+        LinearLayout formActions = new LinearLayout(this);
+        formActions.setOrientation(LinearLayout.HORIZONTAL);
+        newEntry = new Button(this);
+        newEntry.setText("Neu");
+        newEntry.setOnClickListener(v -> {
+            if (busy) return;
+            clearForm();
+            for (EditText field : inputFields()) {
+                if (field.isShown()) { field.requestFocus(); break; }
+            }
+        });
+        formActions.addView(newEntry, new LinearLayout.LayoutParams(0, -2, 3));
+        formActions.addView(snippets, new LinearLayout.LayoutParams(0, -2, 7));
+        root.addView(formActions, matchWrap());
+
+        LinearLayout fieldsRow = new LinearLayout(this);
+        fieldsRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout boxColumn = new LinearLayout(this);
+        boxColumn.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams boxParams = new LinearLayout.LayoutParams(0, -2, 3);
+        boxParams.setMarginEnd(dp(8));
+        fieldsRow.addView(boxColumn, boxParams);
+        LinearLayout amountColumn = new LinearLayout(this);
+        amountColumn.setOrientation(LinearLayout.VERTICAL);
+        fieldsRow.addView(amountColumn, new LinearLayout.LayoutParams(0, -2, 7));
+        root.addView(fieldsRow, matchWrap());
+        addFieldTitle(boxColumn, "Box", 0);
         LinearLayout boxRow = new LinearLayout(this);
         boxRow.setOrientation(LinearLayout.HORIZONTAL);
         boxRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -271,11 +313,9 @@ public class EditorActivity extends Activity {
         box.setSingleLine(true);
         box.setHint("Box");
         boxRow.addView(box, new LinearLayout.LayoutParams(0, -2, 3));
-        boxRow.addView(new android.widget.Space(this), new LinearLayout.LayoutParams(dp(8), 0));
-        boxRow.addView(snippets, new LinearLayout.LayoutParams(0, -2, 7));
-        root.addView(boxRow, matchWrap());
-        fieldViews[0] = boxRow;
-        addFieldTitle(root, "Anzahl", 1);
+        boxColumn.addView(boxRow, matchWrap());
+        fieldViews[0] = boxColumn;
+        addFieldTitle(amountColumn, "Anzahl", 1);
         LinearLayout amountRow = new LinearLayout(this);
         amountRow.setOrientation(LinearLayout.HORIZONTAL);
         decreaseAmount = new Button(this);
@@ -291,8 +331,8 @@ public class EditorActivity extends Activity {
         increaseAmount.setContentDescription("Anzahl um 1 erhöhen");
         increaseAmount.setOnClickListener(v -> changeAmount(1));
         amountRow.addView(increaseAmount, new LinearLayout.LayoutParams(dp(56), dp(48)));
-        root.addView(amountRow, matchWrap());
-        fieldViews[1] = amountRow;
+        amountColumn.addView(amountRow, matchWrap());
+        fieldViews[1] = amountColumn;
         amount.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         amount.setHint("0");
         addFieldTitle(root, "Device", 2);
@@ -653,7 +693,7 @@ public class EditorActivity extends Activity {
                         for (int i = 0; i < hits.size(); i++) {
                             JSONObject data = hits.get(i).data;
                             labels[i] = data.optString("box", "") + " · " + data.optString("device", "")
-                                    + " · " + data.optString("alias", "") + " · " + data.optString("path", "");
+                                    + " · " + data.optString("alias", "") + " · " + selection.paths.displayPath(hits.get(i).source);
                         }
                         new android.app.AlertDialog.Builder(this).setTitle(hits.size() + " Treffer")
                                 .setItems(labels, (dialog, which) -> selectSearchHit(hits.get(which), entries))
@@ -674,7 +714,7 @@ public class EditorActivity extends Activity {
         for (DataIndex.Entry entry : entries) {
             int sourceIndex = sourceIndices.getOrDefault(entry.source, 0);
             sourceIndices.put(entry.source, sourceIndex + 1);
-            if (entry == hit || (!openedBoxName.isEmpty() && openedBoxName.equals(entry.data.optString("box", "")))) {
+            if (entry == hit || (!openedBoxName.isEmpty() && openedBoxName.equalsIgnoreCase(entry.data.optString("box", "")))) {
                 DeviceRecord record = new DeviceRecord(entry.data);
                 record.source = entry.source;
                 record.recordIndex = entry.image ? -1 : sourceIndex;
@@ -815,7 +855,7 @@ public class EditorActivity extends Activity {
                     selectedUri = null;
                     selectedName = null;
                     showImage(null);
-                    openedBoxName = name.endsWith(".json") ? name.substring(0, name.length() - 5) : name;
+                    openedBoxName = source.getName().substring(0, source.getName().length() - 5);
                     deviceRecords.clear();
                     deviceRecords.addAll(choices);
                     refreshDevices();
@@ -859,7 +899,7 @@ public class EditorActivity extends Activity {
             selectedUri = record.image ? Uri.fromFile(record.source) : null;
             selectedName = record.image ? record.source.getName() : null;
             showImage(record.previewFile == null ? null : Uri.fromFile(record.previewFile));
-            selectedLabel.setText("Geladen: " + record.source.getName());
+            selectedLabel.setText("Geladen: " + selection.paths.displayPath(record.source));
         }
     }
 
@@ -874,21 +914,78 @@ public class EditorActivity extends Activity {
         }
     }
 
-    private void uploadAfterSave(String savedMessage) {
+    private void savedLocally(String savedMessage) {
         runOnUiThread(() -> {
             setBusy(false);
-            selectedLabel.setText(savedMessage + " — Upload im Hintergrund");
-            try {
-                startForegroundService(new Intent(this, UploadService.class)
-                        .putExtra("profile", selection.profile.id)
-                        .putExtra("title", selection.profile.title)
-                        .putExtra("images", selection.paths.images.getAbsolutePath())
-                        .putExtra("data", selection.paths.data.getAbsolutePath()));
-            } catch (RuntimeException e) {
-                selectedLabel.setText(savedMessage + " — Upload konnte nicht gestartet werden");
-                Toast.makeText(this, "Lokal gespeichert; Upload: " + e.getMessage(), Toast.LENGTH_LONG).show();
-            }
+            selectedLabel.setText(savedMessage + " — lokal gespeichert");
         });
+    }
+
+    private void synchronizeManually() {
+        if (busy) return;
+        if (!hasStorageAccess()) {
+            requestStorageAccess();
+            return;
+        }
+        TextView log = text("Gespeicherte Dateien werden vorbereitet …\n", 14, Color.DKGRAY);
+        log.setPadding(dp(16), dp(12), dp(16), dp(12));
+        log.setTextIsSelectable(true);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(log);
+        uploadDialog = new android.app.AlertDialog.Builder(this)
+                .setTitle("Manuelle Synchronisation")
+                .setView(scroll)
+                .setCancelable(false)
+                .setPositiveButton("Schließen", null)
+                .setNegativeButton("Abbrechen", null).create();
+        uploadDialog.show();
+        final android.app.AlertDialog dialog = uploadDialog;
+        dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setEnabled(false);
+        final UploadFiles upload = new UploadFiles(this, message -> runOnUiThread(() -> {
+            if (isDestroyed()) return;
+            log.append(message + "\n");
+            scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+        }), selection.paths);
+        activeUpload = upload;
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
+            upload.cancel();
+            dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
+            log.append("Abbruch angefordert …\n");
+        });
+        setBusy(true);
+        worker.execute(() -> {
+            String failure = null;
+            try {
+                rebuildIndex();
+                upload.copy();
+            } catch (Exception e) {
+                failure = "Synchronisation fehlgeschlagen:\n" + UploadErrors.describe(e)
+                        + "\nLokale Dateien bleiben erhalten. Erneut über (c) kner starten.";
+            }
+            final String error = failure;
+            runOnUiThread(() -> {
+                if (isDestroyed()) return;
+                activeUpload = null;
+                setBusy(false);
+                if (error != null) {
+                    log.append("\n" + error + "\n");
+                    dialog.setTitle("Synchronisation fehlgeschlagen");
+                    selectedLabel.setText(error);
+                } else {
+                    dialog.setTitle("Synchronisation abgeschlossen");
+                    selectedLabel.setText("Manuelle Synchronisation abgeschlossen.");
+                }
+                dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setVisibility(View.GONE);
+                dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setEnabled(true);
+                scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+            });
+        });
+    }
+
+    @Override protected void onStop() {
+        // No unattended transfer when the app leaves the foreground.
+        if (activeUpload != null) activeUpload.cancel();
+        super.onStop();
     }
 
     private File existingJpg(Uri uri) throws IOException {
@@ -936,10 +1033,49 @@ public class EditorActivity extends Activity {
     }
 
     private void chooseImage() {
+        if (busy) return;
+        if (!hasStorageAccess()) { requestStorageAccess(); return; }
+        setBusy(true);
+        worker.execute(() -> {
+            try {
+                List<File> files = selection.paths.imageFiles();
+                String[] labels = new String[files.size()];
+                for (int i = 0; i < files.size(); i++) labels[i] = selection.paths.displayPath(files.get(i));
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    setBusy(false);
+                    android.app.AlertDialog.Builder dialog = new android.app.AlertDialog.Builder(this)
+                            .setTitle("JPG öffnen – alle Unterordner")
+                            .setNeutralButton("Andere Datei …", (d, which) -> chooseExternalImage())
+                            .setNegativeButton("Abbrechen", null);
+                    if (files.isEmpty()) dialog.setMessage("Keine JPG-Dateien im Bildordner oder seinen Unterordnern gefunden.");
+                    else dialog.setItems(labels, (d, which) -> openImage(Uri.fromFile(files.get(which)), labels[which]));
+                    dialog.show();
+                });
+            } catch (IOException | java.io.UncheckedIOException e) {
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    setBusy(false);
+                    new android.app.AlertDialog.Builder(this).setTitle("JPG öffnen fehlgeschlagen")
+                            .setMessage(e.getMessage()).setPositiveButton("OK", null)
+                            .setNeutralButton("Andere Datei …", (d, which) -> chooseExternalImage()).show();
+                });
+            }
+        });
+    }
+
+    private void chooseExternalImage() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("image/*");
         intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/jpeg", "image/png"});
+        File storage = Environment.getExternalStorageDirectory();
+        if (selection.paths.images.toPath().startsWith(storage.toPath())) {
+            String relative = storage.toPath().relativize(selection.paths.images.toPath()).toString();
+            intent.putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI,
+                    android.provider.DocumentsContract.buildDocumentUri(
+                            "com.android.externalstorage.documents", "primary:" + relative));
+        }
         startActivityForResult(intent, PICK_IMAGE);
     }
 
@@ -1001,55 +1137,61 @@ public class EditorActivity extends Activity {
             return;
         }
         if (requestCode == PICK_IMAGE && resultCode == RESULT_OK && data != null) {
-            deviceRecords.clear();
-            openedBoxName = null;
-            activeRecord = null;
-            refreshDevices();
-            selectedUri = data.getData();
-            selectedName = queryName(selectedUri);
-            selectedLabel.setText(selectedName);
-            showImage(selectedUri);
-            setBusy(true);
-            box.setText("");
-            comment.setText("");
-            category.setText("", false);
-            amount.setText("");
-            amount.setError(null);
-            device.setText("");
-            alias.setText("");
-            packageField.setText("");
-            createdAt = null;
-            Uri uri = selectedUri;
-            worker.execute(() -> {
-                try {
-                    String existing = ImageProcessor.readUserComment(getContentResolver().openInputStream(uri));
-                    MetadataData values = MetadataData.parse(existing);
-                    runOnUiThread(() -> {
-                        if (uri.equals(selectedUri)) {
-                            createdAt = values.created;
-                            box.setText(values.box);
-                            amount.setText(Integer.toString(values.amount));
-                            device.setText(values.device);
-                            alias.setText(values.alias);
-                            packageField.setText(values.packageName);
-                            selectCategory(values.category);
-                            comment.setText(values.comment);
-                            comment.setSelection(comment.length());
-                            setBusy(false);
-                        }
-                    });
-                } catch (IOException ignored) {
-                    runOnUiThread(() -> {
-                        if (uri.equals(selectedUri)) {
-                            setBusy(false);
-                        }
-                    });
-                }
-            });
+            Uri uri = data.getData();
+            if (uri != null) openImage(uri, queryName(uri));
         }
     }
 
+    private void openImage(Uri imageUri, String label) {
+        deviceRecords.clear();
+        openedBoxName = null;
+        activeRecord = null;
+        refreshDevices();
+        selectedUri = imageUri;
+        selectedName = queryName(selectedUri);
+        selectedLabel.setText(label);
+        showImage(selectedUri);
+        setBusy(true);
+        box.setText("");
+        comment.setText("");
+        category.setText("", false);
+        amount.setText("");
+        amount.setError(null);
+        device.setText("");
+        alias.setText("");
+        packageField.setText("");
+        createdAt = null;
+        Uri uri = selectedUri;
+        worker.execute(() -> {
+            try {
+                String existing = ImageProcessor.readUserComment(getContentResolver().openInputStream(uri));
+                MetadataData values = MetadataData.parse(existing);
+                runOnUiThread(() -> {
+                    if (uri.equals(selectedUri)) {
+                        createdAt = values.created;
+                        box.setText(values.box);
+                        amount.setText(Integer.toString(values.amount));
+                        device.setText(values.device);
+                        alias.setText(values.alias);
+                        packageField.setText(values.packageName);
+                        selectCategory(values.category);
+                        comment.setText(values.comment);
+                        comment.setSelection(comment.length());
+                        setBusy(false);
+                    }
+                });
+            } catch (IOException ignored) {
+                runOnUiThread(() -> {
+                    if (uri.equals(selectedUri)) {
+                        setBusy(false);
+                    }
+                });
+            }
+        });
+    }
+
     private String queryName(Uri uri) {
+        if ("file".equals(uri.getScheme())) return new File(uri.getPath()).getName();
         try (Cursor c = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
             if (c != null && c.moveToFirst()) return c.getString(0);
         }
@@ -1097,7 +1239,7 @@ public class EditorActivity extends Activity {
                     // An opened record always stays in its original JSON file and subfolder.
                     File directory = editingBox ? originalRecord.source.getParentFile() : paths.data;
                     String filename = editingBox ? originalRecord.source.getName()
-                            : boxName.endsWith(".json") ? boxName : boxName + ".json";
+                            : BoxRecords.filename(boxName);
                     int preferredIndex = editingBox ? originalRecord.recordIndex : -1;
                     File saved = BoxRecords.save(directory, filename, userComment, preferredIndex);
                     List<JSONObject> records = BoxRecords.load(directory, saved.getName());
@@ -1120,7 +1262,7 @@ public class EditorActivity extends Activity {
                         refreshDevices();
                         if (savedRecord != null) applyRecord(savedRecord);
                     });
-                    uploadAfterSave("Gespeichert: " + saved.getAbsolutePath());
+                    savedLocally("Gespeichert: " + saved.getAbsolutePath());
                     return;
                 }
                 File existing = existingJpg(imageUri);
@@ -1141,7 +1283,7 @@ public class EditorActivity extends Activity {
                     showImage(null);
                     showImage(saved);
                 });
-                uploadAfterSave("Gespeichert: " + saved.getPath()
+                savedLocally("Gespeichert: " + saved.getPath()
                         + " (" + result.length / 1024 + " kB)");
             } catch (Exception e) {
                 runOnUiThread(() -> {
@@ -1179,6 +1321,7 @@ public class EditorActivity extends Activity {
         else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         openJson.setEnabled(!busy && !searchMode);
         search.setEnabled(!busy);
+        newEntry.setEnabled(!busy);
         save.setEnabled(!busy && !searchMode);
         box.setEnabled(!busy);
         category.setEnabled(!busy);
@@ -1193,6 +1336,7 @@ public class EditorActivity extends Activity {
         setup.setEnabled(!busy && !searchMode);
         progress.setVisibility(busy ? View.VISIBLE : View.GONE);
         profileTitle.setEnabled(!busy);
+        synchronize.setEnabled(!busy);
     }
 
     private void selectCategory(String value) {
@@ -1229,6 +1373,8 @@ public class EditorActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (activeUpload != null) activeUpload.cancel();
+        if (uploadDialog != null) uploadDialog.dismiss();
         worker.shutdownNow();
         super.onDestroy();
     }

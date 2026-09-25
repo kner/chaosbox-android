@@ -36,12 +36,24 @@ public final class StoragePathsTest {
             File nested = new File(paths.data, "alt/gruppe/zweite.json");
             Files.createDirectories(nested.getParentFile().toPath());
             Files.write(nested.toPath(), "[{\"box\":\"zweite\"}]".getBytes(StandardCharsets.UTF_8));
+            File deepImage = new File(paths.images, "elektronik/sensoren/temperatur/photo.jpg");
+            Files.createDirectories(deepImage.getParentFile().toPath());
+            Files.write(deepImage.toPath(), picture);
+            Files.createSymbolicLink(new File(paths.images, "linked-directory").toPath(), deepImage.getParentFile().toPath());
+            check(paths.imageFiles().size() == 2 && paths.imageFiles().contains(deepImage),
+                    "Image picker and search discover arbitrary depth without following directory symlinks");
+            check(paths.displayPath(deepImage).equals("JPG/elektronik/sensoren/temperatur/photo.jpg"),
+                    "Image picker shows relative path");
+            check(!paths.displayPath(image).equals(paths.displayPath(deepImage)), "Duplicate basenames distinguishable");
             check(paths.migrate(file -> "Audio").isEmpty(), "Image migration warnings");
+            check(deepImage.isFile(), "Existing nested image organization preserved");
             check(Arrays.equals(picture, Files.readAllBytes(new File(paths.images, "audio/photo.jpg").toPath())),
                     "Image bytes unchanged");
             check(LocalData.read(box).equals(json), "a11.json remains in boxes with both records");
             check(paths.jsonFiles().contains(nested), "Nested box discovered recursively");
             check(paths.findBox("a11", "Elektronik").equals(box), "Box lookup ignores category");
+            check(paths.findBox("A11", "").equals(box), "Uppercase box lookup");
+            check(paths.findBox("A11.JSON", "").equals(box), "Uppercase extension lookup");
             BoxRecords.save(box.getParentFile(), box.getName(), "{\"device\":\"B\",\"anzahl\":9}", 1);
             check(BoxRecords.load(box.getParentFile(), box.getName()).size() == 2,
                     "Count update preserves record count");
