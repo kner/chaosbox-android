@@ -62,6 +62,7 @@ public class EditorActivity extends Activity {
     private boolean searchMode, busy, indexInitialized;
     private android.widget.ImageButton search;
     private String[] beforeSearch;
+    private String[] lastSearch;
     private String beforeSearchLabel;
     private android.net.Uri displayedImage;
     private android.net.Uri beforeSearchImage;
@@ -72,7 +73,8 @@ public class EditorActivity extends Activity {
     private EditText box;
     private android.widget.AutoCompleteTextView category;
     private EditText amount, alias, packageField;
-    private Button decreaseAmount, increaseAmount, newEntry, synchronize;
+    private Button decreaseAmount, increaseAmount, synchronize;
+    private android.widget.ImageButton newEntry, repeatSearch;
     private UploadFiles activeUpload;
     private android.app.AlertDialog uploadDialog;
     private android.widget.AutoCompleteTextView device;
@@ -125,7 +127,7 @@ public class EditorActivity extends Activity {
             initializeIndex();
         } else if (!storageRequested) {
             storageRequested = true;
-            Toast.makeText(this, "Für ChaosBox bitte den Zugriff auf alle Dateien erlauben.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Please allow access to all files for ChaosBox.", Toast.LENGTH_LONG).show();
             requestStorageAccess();
         }
     }
@@ -140,7 +142,7 @@ public class EditorActivity extends Activity {
     private void applyProfileLabels() {
         setTitle(selection.profile.title);
         profileTitle.setText(selection.profile.title + " ▾");
-        profileTitle.setContentDescription(selection.profile.title + ", App-Profil auswählen");
+        profileTitle.setContentDescription(selection.profile.title + ", Select app profile");
         EditText[] fields = inputFields();
         for (int i = 0; i < fields.length; i++) {
             boolean visible = selection.profile.visible(i);
@@ -153,6 +155,7 @@ public class EditorActivity extends Activity {
     }
 
     private void resetProfileForm() {
+        lastSearch = null;
         clearForm();
         amount.setText("0");
         indexInitialized = false;
@@ -179,7 +182,7 @@ public class EditorActivity extends Activity {
             field.setError(null);
         }
         showImage(null);
-        selectedLabel.setText("Noch kein Bild oder Datensatz ausgewählt");
+        selectedLabel.setText("No image or record selected");
         refreshDevices();
         applyProfileLabels();
     }
@@ -207,7 +210,7 @@ public class EditorActivity extends Activity {
                 titles[i] = profile.title + " (" + profile.id + ")";
                 if (profile.id.equals(selection.profile.id)) checked = i;
             }
-            new android.app.AlertDialog.Builder(this).setTitle("App auswählen")
+            new android.app.AlertDialog.Builder(this).setTitle("Select app")
                     .setSingleChoiceItems(titles, checked, (dialog, which) -> {
                         try {
                             AppSettings.Selection next = AppSettings.select(this, profiles.profiles.get(which).id);
@@ -222,7 +225,7 @@ public class EditorActivity extends Activity {
                         } catch (IOException e) {
                             Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show();
                         }
-                    }).setNegativeButton("Abbrechen", null).show();
+                    }).setNegativeButton("Cancel", null).show();
         } catch (IOException e) {
             Toast.makeText(this, "Setup: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
@@ -246,7 +249,7 @@ public class EditorActivity extends Activity {
         profileTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
         profileTitle.setOnClickListener(v -> chooseProfile());
         profileTitle.setFocusable(true);
-        profileTitle.setTooltipText("App-Profil auswählen");
+        profileTitle.setTooltipText("Select app profile");
         LinearLayout.LayoutParams profileParams = new LinearLayout.LayoutParams(0, -2, 1);
         profileParams.setMarginEnd(dp(8));
         header.addView(profileTitle, profileParams);
@@ -261,28 +264,32 @@ public class EditorActivity extends Activity {
         synchronize.setMinWidth(0);
         synchronize.setMinimumWidth(0);
         synchronize.setPadding(dp(10), 0, dp(10), 0);
-        synchronize.setContentDescription("(c) kner – manuell synchronisieren");
-        synchronize.setTooltipText("Gespeicherte Dateien jetzt hochladen");
+        synchronize.setContentDescription("(c) kner – synchronize manually");
+        synchronize.setTooltipText("Upload saved files now");
         synchronize.setOnClickListener(v -> synchronizeManually());
         header.addView(synchronize, new LinearLayout.LayoutParams(-2, dp(48)));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        choose = icon(actions, android.R.drawable.ic_menu_gallery, "JPG oder PNG auswählen", v -> chooseImage());
-        openJson = icon(actions, android.R.drawable.ic_menu_agenda, "JSON öffnen", v -> openJson());
-        search = icon(actions, android.R.drawable.ic_menu_search, "Suchen", v -> searchClicked());
-        save = icon(actions, android.R.drawable.ic_menu_save, "Daten speichern", v -> saveImage());
+        choose = icon(actions, android.R.drawable.ic_menu_gallery, "Select JPG or PNG", v -> chooseImage());
+        openJson = icon(actions, android.R.drawable.ic_menu_agenda, "Open JSON", v -> openJson());
+        search = icon(actions, android.R.drawable.ic_menu_search, "Search", v -> searchClicked());
+        save = icon(actions, android.R.drawable.ic_menu_save, "Save data", v -> saveImage());
         save.setEnabled(true);
-        setup = icon(actions, android.R.drawable.ic_menu_preferences, "Setup bearbeiten", v -> editSetup());
+        setup = icon(actions, android.R.drawable.ic_menu_preferences, "Edit setup", v -> editSetup());
         root.addView(actions, matchWrap());
 
         Button snippets = new Button(this);
-        snippets.setText("Textbaustein ▾");
+        snippets.setText("TXT");
+        snippets.setContentDescription("Text snippets");
+        snippets.setTooltipText("Copy text snippet");
         snippets.setSingleLine(true);
         snippets.setTextSize(12);
         snippets.setMinWidth(0);
+        snippets.setMinimumWidth(0);
+        snippets.setPadding(dp(8), 0, dp(8), 0);
         snippets.setOnClickListener(v -> chooseTextSnippet());
 
-        selectedLabel = text("Noch kein Bild ausgewählt", 14, Color.DKGRAY);
+        selectedLabel = text("No image selected", 14, Color.DKGRAY);
         LinearLayout.LayoutParams labelParams = matchWrap();
         labelParams.setMargins(0, dp(8), 0, dp(12));
         root.addView(selectedLabel, labelParams);
@@ -294,17 +301,16 @@ public class EditorActivity extends Activity {
 
         LinearLayout formActions = new LinearLayout(this);
         formActions.setOrientation(LinearLayout.HORIZONTAL);
-        newEntry = new Button(this);
-        newEntry.setText("Neu");
-        newEntry.setOnClickListener(v -> {
+        newEntry = icon(formActions, R.drawable.ic_clear_all, "Clear all", v -> {
             if (busy) return;
             clearForm();
             for (EditText field : inputFields()) {
                 if (field.isShown()) { field.requestFocus(); break; }
             }
         });
-        formActions.addView(newEntry, new LinearLayout.LayoutParams(0, -2, 3));
-        formActions.addView(snippets, new LinearLayout.LayoutParams(0, -2, 7));
+        repeatSearch = icon(formActions, R.drawable.ic_return, "Repeat last search", v -> repeatLastSearch());
+        repeatSearch.setEnabled(false);
+        formActions.addView(snippets, new LinearLayout.LayoutParams(0, dp(56), 1));
         root.addView(formActions, matchWrap());
 
         LinearLayout fieldsRow = new LinearLayout(this);
@@ -328,12 +334,12 @@ public class EditorActivity extends Activity {
         boxRow.addView(box, new LinearLayout.LayoutParams(0, -2, 3));
         boxColumn.addView(boxRow, matchWrap());
         fieldViews[0] = boxColumn;
-        addFieldTitle(amountColumn, "Anzahl", 1);
+        addFieldTitle(amountColumn, "Quantity", 1);
         LinearLayout amountRow = new LinearLayout(this);
         amountRow.setOrientation(LinearLayout.HORIZONTAL);
         decreaseAmount = new Button(this);
         decreaseAmount.setText("−");
-        decreaseAmount.setContentDescription("Anzahl um 1 verringern");
+        decreaseAmount.setContentDescription("Decrease quantity by 1");
         decreaseAmount.setOnClickListener(v -> changeAmount(-1));
         amountRow.addView(decreaseAmount, new LinearLayout.LayoutParams(dp(56), dp(48)));
         amount = new EditText(this);
@@ -341,7 +347,7 @@ public class EditorActivity extends Activity {
         amountRow.addView(amount, new LinearLayout.LayoutParams(0, -2, 1));
         increaseAmount = new Button(this);
         increaseAmount.setText("+");
-        increaseAmount.setContentDescription("Anzahl um 1 erhöhen");
+        increaseAmount.setContentDescription("Increase quantity by 1");
         increaseAmount.setOnClickListener(v -> changeAmount(1));
         amountRow.addView(increaseAmount, new LinearLayout.LayoutParams(dp(56), dp(48)));
         amountColumn.addView(amountRow, matchWrap());
@@ -351,7 +357,7 @@ public class EditorActivity extends Activity {
         addFieldTitle(root, "Device", 2);
         device = new android.widget.AutoCompleteTextView(this);
         device.setSingleLine(true);
-        device.setHint("Auswählen oder eingeben");
+        device.setHint("Select or enter");
         device.setThreshold(1);
         device.setCompoundDrawablesWithIntrinsicBounds(0, 0, android.R.drawable.arrow_down_float, 0);
         device.setOnClickListener(v -> {
@@ -365,17 +371,17 @@ public class EditorActivity extends Activity {
         root.addView(device, matchWrap());
         fieldViews[2] = device;
         alias = field(root, "Alias", 3);
-        addFieldTitle(root, "Kategorie", 4);
+        addFieldTitle(root, "Category", 4);
         category = new android.widget.AutoCompleteTextView(this);
         category.setSingleLine(true);
-        category.setHint("Auswählen oder eingeben");
+        category.setHint("Select or enter");
         category.setThreshold(0);
         category.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, categories));
         category.setOnClickListener(v -> { if (!searchMode) category.showDropDown(); });
         category.setCompoundDrawablesWithIntrinsicBounds(0, 0, android.R.drawable.arrow_down_float, 0);
         root.addView(category, matchWrap());
         fieldViews[4] = category;
-        addFieldTitle(root, "Kommentar", 5);
+        addFieldTitle(root, "Comment", 5);
         // Inflate scrollbar attributes so Android initializes its scrollbar drawable at construction.
         comment = (EditText) getLayoutInflater().inflate(R.layout.comment_input, root, false);
         root.addView(comment);
@@ -452,8 +458,8 @@ public class EditorActivity extends Activity {
         try {
             java.util.Map<String, String> snippets = AppSettings.configuration(this).textSnippets;
             if (snippets.isEmpty()) {
-                new android.app.AlertDialog.Builder(this).setTitle("Textbausteine")
-                        .setMessage("Im Setup unter [TextSnippets] Einträge wie text1=\"text1\" hinzufügen.")
+                new android.app.AlertDialog.Builder(this).setTitle("Text snippets")
+                        .setMessage("Add entries such as text1=\"text1\" under [TextSnippets] in setup.")
                         .setPositiveButton("OK", null).show();
                 return;
             }
@@ -471,15 +477,15 @@ public class EditorActivity extends Activity {
                     return row;
                 }
             };
-            new android.app.AlertDialog.Builder(this).setTitle("Textbaustein kopieren")
+            new android.app.AlertDialog.Builder(this).setTitle("Copy text snippet")
                     .setAdapter(adapter, (dialog, which) -> {
                         String name = names.get(which);
                         android.content.ClipboardManager clipboard =
                                 (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                         clipboard.setPrimaryClip(android.content.ClipData.newPlainText(name, snippets.get(name)));
-                        Toast.makeText(this, "Textbaustein kopiert – im Textfeld lange drücken und Einfügen wählen.",
+                        Toast.makeText(this, "Text snippet copied – long-press a text field and choose Paste.",
                                 Toast.LENGTH_LONG).show();
-                    }).setNegativeButton("Abbrechen", null).show();
+                    }).setNegativeButton("Cancel", null).show();
         } catch (IOException e) {
             Toast.makeText(this, "Setup: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
@@ -500,9 +506,9 @@ public class EditorActivity extends Activity {
             ScrollView scroll = new ScrollView(this);
             scroll.addView(input);
             android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
-                    .setTitle("setup.ini bearbeiten").setView(scroll)
-                    .setNegativeButton("Abbrechen", null)
-                    .setPositiveButton("Speichern", null).create();
+                    .setTitle("Edit setup.ini").setView(scroll)
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Save", null).create();
             dialog.setOnShowListener(d -> dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
                     .setOnClickListener(v -> {
                         android.util.AtomicFile target = new android.util.AtomicFile(file);
@@ -518,10 +524,10 @@ public class EditorActivity extends Activity {
                             indexInitialized = false;
                             initializeIndex();
                             dialog.dismiss();
-                            Toast.makeText(this, "Setup gespeichert", Toast.LENGTH_SHORT).show();
+                            Toast.makeText(this, "Setup saved", Toast.LENGTH_SHORT).show();
                         } catch (IOException e) {
                             if (out != null) target.failWrite(out);
-                            input.setError("Speichern fehlgeschlagen: " + e.getMessage());
+                            input.setError("Save failed: " + e.getMessage());
                         }
                     }));
             dialog.show();
@@ -563,7 +569,7 @@ public class EditorActivity extends Activity {
                 restoreInitialAssets("initial/JPG", paths.images, knownImages);
                 restoreInitialAssets("initial/boxes", paths.data, knownBoxes);
                 if (!prefs.edit().putBoolean("jpg-and-boxes-restored-v2", true).commit())
-                    throw new IOException("Initialisierung konnte nicht bestätigt werden.");
+                    throw new IOException("Could not confirm initialization.");
             }
         }
     }
@@ -618,7 +624,7 @@ public class EditorActivity extends Activity {
                 });
                 rebuildIndex();
                 if (!warnings.isEmpty()) runOnUiThread(() -> showIndexError(
-                        "Einige Dateien blieben unverändert am bisherigen Ort:\n" + String.join("\n", warnings)));
+                        "Some files remain unchanged in their original location:\n" + String.join("\n", warnings)));
                 runOnUiThread(() -> { refreshCategories(); setBusy(false); });
             } catch (IOException e) {
                 runOnUiThread(() -> { setBusy(false); showIndexError(e.getMessage()); });
@@ -627,7 +633,7 @@ public class EditorActivity extends Activity {
     }
 
     private void showIndexError(String message) {
-        new android.app.AlertDialog.Builder(this).setTitle("Datendatei nicht aktualisiert")
+        new android.app.AlertDialog.Builder(this).setTitle("Data file not updated")
                 .setMessage(message).setPositiveButton("OK", null).show();
     }
 
@@ -652,16 +658,26 @@ public class EditorActivity extends Activity {
         category.setCompoundDrawablesWithIntrinsicBounds(0, 0, arrow, 0);
         amount.setInputType(enabled ? android.text.InputType.TYPE_CLASS_TEXT
                 : android.text.InputType.TYPE_CLASS_NUMBER);
-        device.setHint(enabled ? "Regulärer Ausdruck" : "Auswählen oder eingeben");
-        category.setHint(enabled ? "Regulärer Ausdruck" : "Auswählen oder eingeben");
-        search.setContentDescription(enabled ? "Suche ausführen" : "Suchen");
-        search.setTooltipText(enabled ? "Suche ausführen" : "Suchen");
+        device.setHint(enabled ? "Regular expression" : "Select or enter");
+        category.setHint(enabled ? "Regular expression" : "Select or enter");
+        search.setContentDescription(enabled ? "Run search" : "Search");
+        search.setTooltipText(enabled ? "Run search" : "Search");
         if (!enabled) { refreshDevices(); refreshCategories(); }
         for (EditText field : inputFields()) field.setError(null);
         setBusy(false);
     }
 
+    private void repeatLastSearch() {
+        if (busy || lastSearch == null) return;
+        if (!hasStorageAccess()) { requestStorageAccess(); return; }
+        if (!searchMode) searchClicked();
+        EditText[] fields = inputFields();
+        for (int i = 0; i < fields.length; i++) fields[i].setText(lastSearch[i]);
+        searchClicked();
+    }
+
     private void searchClicked() {
+        if (busy) return;
         if (!hasStorageAccess()) { requestStorageAccess(); return; }
         if (!searchMode) {
             EditText[] fields = inputFields();
@@ -672,7 +688,7 @@ public class EditorActivity extends Activity {
             setSearchMode(true);
             for (EditText field : fields) field.setText("");
             showImage(null);
-            selectedLabel.setText("Suche: Regex eingeben, dann Lupe. Leere Felder beliebig; Zurück bricht ab.");
+            selectedLabel.setText("Search: enter regex, then tap Search. Empty fields match anything; Back cancels.");
             for (EditText field : fields) if (field.isShown()) { field.requestFocus(); break; }
             return;
         }
@@ -685,11 +701,14 @@ public class EditorActivity extends Activity {
             try {
                 patterns.putAll(DataIndex.compile(java.util.Collections.singletonMap(keys[i], fields[i].getText().toString())));
             } catch (java.util.regex.PatternSyntaxException e) {
-                fields[i].setError("Ungültiger regulärer Ausdruck: " + e.getDescription());
+                fields[i].setError("Invalid regular expression: " + e.getDescription());
                 fields[i].requestFocus();
                 return;
             }
         }
+        // Retain the query independently of the record opened from its results.
+        lastSearch = new String[fields.length];
+        for (int i = 0; i < fields.length; i++) lastSearch[i] = fields[i].getText().toString();
         setBusy(true);
         worker.execute(() -> {
             try {
@@ -698,7 +717,7 @@ public class EditorActivity extends Activity {
                 runOnUiThread(() -> {
                     setBusy(false);
                     if (hits.isEmpty()) {
-                        selectedLabel.setText("Keine Treffer. Suchfelder ändern und erneut auf die Lupe tippen.");
+                        selectedLabel.setText("No matches. Change the search fields and tap Search again.");
                     } else if (hits.size() == 1) {
                         selectSearchHit(hits.get(0), entries);
                     } else {
@@ -708,9 +727,9 @@ public class EditorActivity extends Activity {
                             labels[i] = data.optString("box", "") + " · " + data.optString("device", "")
                                     + " · " + data.optString("alias", "") + " · " + selection.paths.displayPath(hits.get(i).source);
                         }
-                        new android.app.AlertDialog.Builder(this).setTitle(hits.size() + " Treffer")
+                        new android.app.AlertDialog.Builder(this).setTitle(hits.size() + " matches")
                                 .setItems(labels, (dialog, which) -> selectSearchHit(hits.get(which), entries))
-                                .setNegativeButton("Weitersuchen", null).show();
+                                .setNegativeButton("Keep searching", null).show();
                     }
                 });
             } catch (IOException e) {
@@ -763,7 +782,7 @@ public class EditorActivity extends Activity {
     private void refreshDevices() {
         if (searchMode) return;
         List<DeviceRecord> sortedDevices = new ArrayList<>(deviceRecords);
-        java.text.Collator collator = java.text.Collator.getInstance(java.util.Locale.GERMAN);
+        java.text.Collator collator = java.text.Collator.getInstance(java.util.Locale.ENGLISH);
         collator.setStrength(java.text.Collator.SECONDARY);
         sortedDevices.sort((left, right) -> collator.compare(left.toString(), right.toString()));
         device.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_dropdown_item_1line, sortedDevices));
@@ -776,7 +795,7 @@ public class EditorActivity extends Activity {
             return;
         }
         if (!selection.profile.visible(0)) {
-            requestBoxName("JSON öffnen", this::openJson);
+            requestBoxName("Open JSON", this::openJson);
             return;
         }
         openJson(box.getText().toString().trim());
@@ -810,24 +829,24 @@ public class EditorActivity extends Activity {
                 candidate = new File(Environment.getExternalStorageDirectory(), id.substring(8));
         }
         if (candidate == null)
-            throw new IOException("Bitte eine JSON-Datei aus dem Datenordner des aktiven Profils auswählen.");
+            throw new IOException("Select a JSON file from the active profile's data folder.");
         File file = candidate.getCanonicalFile();
         File dataRoot = selection.paths.data;
         if (file.equals(dataRoot) || !file.toPath().startsWith(dataRoot.toPath())
                 || !file.getName().toLowerCase(java.util.Locale.ROOT).endsWith(".json")
                 || !java.nio.file.Files.isRegularFile(candidate.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS))
-            throw new IOException("Bitte eine JSON-Datei aus dem Datenordner des aktiven Profils auswählen.");
+            throw new IOException("Select a JSON file from the active profile's data folder.");
         return file;
     }
 
     private void requestBoxName(String title, java.util.function.Consumer<String> action) {
         EditText input = new EditText(this);
         input.setSingleLine(true);
-        input.setHint("Dateiname der JSON-Box");
+        input.setHint("JSON box filename");
         input.setText(box.getText().toString());
         android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(this)
                 .setTitle(title).setView(input).setPositiveButton("OK", null)
-                .setNegativeButton("Abbrechen", null).create();
+                .setNegativeButton("Cancel", null).create();
         dialog.setOnShowListener(v -> dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(button -> {
                     String name = input.getText().toString().trim();
@@ -873,7 +892,7 @@ public class EditorActivity extends Activity {
                     deviceRecords.addAll(choices);
                     refreshDevices();
                     applyRecord(choices.get(0));
-                    selectedLabel.setText("Geöffnet: " + openedBoxName + ".json — " + choices.size() + " Datensätze");
+                    selectedLabel.setText("Opened: " + openedBoxName + ".json — " + choices.size() + " records");
                     setBusy(false);
                     if (choices.size() > 1 && selection.profile.visible(2)) {
                         device.requestFocus();
@@ -881,16 +900,16 @@ public class EditorActivity extends Activity {
                     } else if (choices.size() > 1) {
                         String[] labels = new String[choices.size()];
                         for (int i = 0; i < labels.length; i++)
-                            labels[i] = "Datensatz " + (i + 1) + ": " + choices.get(i).toString();
-                        new android.app.AlertDialog.Builder(this).setTitle("Datensatz auswählen")
+                            labels[i] = "Record " + (i + 1) + ": " + choices.get(i).toString();
+                        new android.app.AlertDialog.Builder(this).setTitle("Select record")
                                 .setItems(labels, (dialog, which) -> applyRecord(choices.get(which)))
-                                .setNegativeButton("Abbrechen", null).show();
+                                .setNegativeButton("Cancel", null).show();
                     }
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     setBusy(false);
-                    Toast.makeText(this, "JSON öffnen: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Open JSON: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 });
             }
         });
@@ -912,7 +931,7 @@ public class EditorActivity extends Activity {
             selectedUri = record.image ? Uri.fromFile(record.source) : null;
             selectedName = record.image ? record.source.getName() : null;
             showImage(record.previewFile == null ? null : Uri.fromFile(record.previewFile));
-            selectedLabel.setText("Geladen: " + selection.paths.displayPath(record.source));
+            selectedLabel.setText("Loaded: " + selection.paths.displayPath(record.source));
         }
     }
 
@@ -923,14 +942,14 @@ public class EditorActivity extends Activity {
         int recordIndex = -1;
         DeviceRecord(JSONObject json) { values = MetadataData.parse(json.toString()); }
         @Override public String toString() {
-            return values.device.isEmpty() ? "(ohne Device)" : values.device;
+            return values.device.isEmpty() ? "(no device)" : values.device;
         }
     }
 
     private void savedLocally(String savedMessage) {
         runOnUiThread(() -> {
             setBusy(false);
-            selectedLabel.setText(savedMessage + " — lokal gespeichert");
+            selectedLabel.setText(savedMessage + " — saved locally");
         });
     }
 
@@ -940,17 +959,17 @@ public class EditorActivity extends Activity {
             requestStorageAccess();
             return;
         }
-        TextView log = text("Gespeicherte Dateien werden vorbereitet …\n", 14, Color.DKGRAY);
+        TextView log = text("Preparing saved files …\n", 14, Color.DKGRAY);
         log.setPadding(dp(16), dp(12), dp(16), dp(12));
         log.setTextIsSelectable(true);
         ScrollView scroll = new ScrollView(this);
         scroll.addView(log);
         uploadDialog = new android.app.AlertDialog.Builder(this)
-                .setTitle("Manuelle Synchronisation")
+                .setTitle("Manual synchronization")
                 .setView(scroll)
                 .setCancelable(false)
-                .setPositiveButton("Schließen", null)
-                .setNegativeButton("Abbrechen", null).create();
+                .setPositiveButton("Close", null)
+                .setNegativeButton("Cancel", null).create();
         uploadDialog.show();
         final android.app.AlertDialog dialog = uploadDialog;
         dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setEnabled(false);
@@ -963,7 +982,7 @@ public class EditorActivity extends Activity {
         dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setOnClickListener(v -> {
             upload.cancel();
             dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setEnabled(false);
-            log.append("Abbruch angefordert …\n");
+            log.append("Cancellation requested …\n");
         });
         setBusy(true);
         worker.execute(() -> {
@@ -972,8 +991,8 @@ public class EditorActivity extends Activity {
                 rebuildIndex();
                 upload.copy();
             } catch (Exception e) {
-                failure = "Synchronisation fehlgeschlagen:\n" + UploadErrors.describe(e)
-                        + "\nLokale Dateien bleiben erhalten. Erneut über (c) kner starten.";
+                failure = "Synchronization failed:\n" + UploadErrors.describe(e)
+                        + "\nLocal files are retained. Tap (c) kner to try again.";
             }
             final String error = failure;
             runOnUiThread(() -> {
@@ -982,11 +1001,11 @@ public class EditorActivity extends Activity {
                 setBusy(false);
                 if (error != null) {
                     log.append("\n" + error + "\n");
-                    dialog.setTitle("Synchronisation fehlgeschlagen");
+                    dialog.setTitle("Synchronization failed");
                     selectedLabel.setText(error);
                 } else {
-                    dialog.setTitle("Synchronisation abgeschlossen");
-                    selectedLabel.setText("Manuelle Synchronisation abgeschlossen.");
+                    dialog.setTitle("Synchronization completed");
+                    selectedLabel.setText("Manual synchronization completed.");
                 }
                 dialog.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).setVisibility(View.GONE);
                 dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setEnabled(true);
@@ -1024,7 +1043,7 @@ public class EditorActivity extends Activity {
         File file = candidate.getCanonicalFile();
         if (!file.toPath().startsWith(root.toPath()) || file.equals(root)) return null;
         if (!java.nio.file.Files.isRegularFile(candidate.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS))
-            throw new IOException("JPG-Quelldatei ist nicht verfügbar.");
+            throw new IOException("JPG source file is unavailable.");
         return file;
     }
 
@@ -1058,10 +1077,10 @@ public class EditorActivity extends Activity {
                     if (isDestroyed()) return;
                     setBusy(false);
                     android.app.AlertDialog.Builder dialog = new android.app.AlertDialog.Builder(this)
-                            .setTitle("JPG öffnen – alle Unterordner")
-                            .setNeutralButton("Andere Datei …", (d, which) -> chooseExternalImage())
-                            .setNegativeButton("Abbrechen", null);
-                    if (files.isEmpty()) dialog.setMessage("Keine JPG-Dateien im Bildordner oder seinen Unterordnern gefunden.");
+                            .setTitle("Open JPG – all subfolders")
+                            .setNeutralButton("Other file …", (d, which) -> chooseExternalImage())
+                            .setNegativeButton("Cancel", null);
+                    if (files.isEmpty()) dialog.setMessage("No JPG files found in the image folder or its subfolders.");
                     else dialog.setItems(labels, (d, which) -> openImage(Uri.fromFile(files.get(which)), labels[which]));
                     dialog.show();
                 });
@@ -1069,9 +1088,9 @@ public class EditorActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isDestroyed()) return;
                     setBusy(false);
-                    new android.app.AlertDialog.Builder(this).setTitle("JPG öffnen fehlgeschlagen")
+                    new android.app.AlertDialog.Builder(this).setTitle("Could not open JPG")
                             .setMessage(e.getMessage()).setPositiveButton("OK", null)
-                            .setNeutralButton("Andere Datei …", (d, which) -> chooseExternalImage()).show();
+                            .setNeutralButton("Other file …", (d, which) -> chooseExternalImage()).show();
                 });
             }
         });
@@ -1095,7 +1114,7 @@ public class EditorActivity extends Activity {
     private void loadCategories() {
         categories.clear();
         if (selection != null) categories.addAll(selection.profile.categories);
-        if (categories.isEmpty()) categories.add("Ohne Kategorie");
+        if (categories.isEmpty()) categories.add("Uncategorized");
     }
 
     private InputStream openSetupFileSafely() throws IOException {
@@ -1109,7 +1128,7 @@ public class EditorActivity extends Activity {
 
     private InputStream openOrCreateSetupFile() throws IOException {
         File dir = new File(Environment.getExternalStorageDirectory(), "ChaosBox/Setup");
-        if (!dir.exists() && !dir.mkdirs()) throw new IOException("Setup-Ordner konnte nicht erstellt werden");
+        if (!dir.exists() && !dir.mkdirs()) throw new IOException("Could not create setup folder");
         File setup = new File(dir, "setup.ini");
         if (!setup.exists()) {
             try (InputStream asset = getAssets().open(Config.SETUP_ASSET); OutputStream output = new FileOutputStream(setup)) {
@@ -1142,10 +1161,10 @@ public class EditorActivity extends Activity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == PICK_JSON && resultCode == RESULT_OK && data != null) {
             try {
-                if (data.getData() == null) throw new IOException("Keine Datei ausgewählt.");
+                if (data.getData() == null) throw new IOException("No file selected.");
                 openJson(selectedJsonFile(data.getData()));
             } catch (IOException e) {
-                Toast.makeText(this, "JSON öffnen: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Open JSON: " + e.getMessage(), Toast.LENGTH_LONG).show();
             }
             return;
         }
@@ -1208,7 +1227,7 @@ public class EditorActivity extends Activity {
         try (Cursor c = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
             if (c != null && c.moveToFirst()) return c.getString(0);
         }
-        return "bild.jpg";
+        return "image.jpg";
     }
 
     private void saveImage() {
@@ -1218,7 +1237,7 @@ public class EditorActivity extends Activity {
             return;
         }
         if (selectedUri == null && !selection.profile.visible(0) && box.getText().toString().trim().isEmpty()) {
-            requestBoxName("JSON speichern", name -> saveImage());
+            requestBoxName("Save JSON", name -> saveImage());
             return;
         }
         final int number;
@@ -1226,7 +1245,7 @@ public class EditorActivity extends Activity {
             number = InputValues.amount(amount.getText().toString());
             amount.setError(null);
         } catch (NumberFormatException e) {
-            amount.setError("Bitte eine gültige Ganzzahl eingeben (0 bis 2147483647).");
+            amount.setError("Enter a valid integer (0 to 2147483647).");
             amount.requestFocus();
             return;
         }
@@ -1275,7 +1294,7 @@ public class EditorActivity extends Activity {
                         refreshDevices();
                         if (savedRecord != null) applyRecord(savedRecord);
                     });
-                    savedLocally("Gespeichert: " + saved.getAbsolutePath());
+                    savedLocally("Saved: " + saved.getAbsolutePath());
                     return;
                 }
                 File existing = existingJpg(imageUri);
@@ -1296,12 +1315,12 @@ public class EditorActivity extends Activity {
                     showImage(null);
                     showImage(saved);
                 });
-                savedLocally("Gespeichert: " + saved.getPath()
+                savedLocally("Saved: " + saved.getPath()
                         + " (" + result.length / 1024 + " kB)");
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     setBusy(false);
-                    Toast.makeText(this, "Fehler: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 });
             }
         });
@@ -1323,7 +1342,7 @@ public class EditorActivity extends Activity {
             amount.setSelection(amount.length());
             amount.setError(null);
         } catch (NumberFormatException | ArithmeticException e) {
-            amount.setError("Bitte eine gültige Ganzzahl eingeben (0 bis 2147483647).");
+            amount.setError("Enter a valid integer (0 to 2147483647).");
             amount.requestFocus();
         }
     }
@@ -1335,6 +1354,7 @@ public class EditorActivity extends Activity {
         openJson.setEnabled(!busy && !searchMode);
         search.setEnabled(!busy);
         newEntry.setEnabled(!busy);
+        repeatSearch.setEnabled(!busy && lastSearch != null);
         save.setEnabled(!busy && !searchMode);
         box.setEnabled(!busy);
         category.setEnabled(!busy);
@@ -1431,7 +1451,7 @@ public class EditorActivity extends Activity {
                         ? (org.json.JSONArray) value : null;
                 if (items != null && items.length() == 0) return data;
                 if (items == null && !(value instanceof JSONObject))
-                    throw new JSONException("JSON-Objekt oder Liste erwartet");
+                    throw new JSONException("Expected a JSON object or list");
                 JSONObject json = items == null ? (JSONObject) value : items.getJSONObject(0);
                 data.created = json.optString("created", "");
                 data.box = json.optString("box", "");
@@ -1454,7 +1474,7 @@ public class EditorActivity extends Activity {
                 }
                 return data;
             } catch (JSONException ignored) {
-                // Fremde oder ältere Inhalte bleiben als unstrukturierter Kommentar erhalten.
+                // Preserve foreign or older content as an unstructured comment.
                 data.comment = raw;
                 return data;
             }
@@ -1463,7 +1483,7 @@ public class EditorActivity extends Activity {
 
     static final class ImageProcessor {
         static byte[] process(InputStream input, String comment, int maxSide) throws IOException {
-            if (input == null) throw new IOException("Bild konnte nicht geöffnet werden");
+            if (input == null) throw new IOException("Could not open image");
             byte[] source;
             try (InputStream in = input; ByteArrayOutputStream all = new ByteArrayOutputStream()) {
                 byte[] buffer = new byte[16384]; int n;
@@ -1473,10 +1493,10 @@ public class EditorActivity extends Activity {
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
             BitmapFactory.decodeByteArray(source, 0, source.length, bounds);
-            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw new IOException("Keine gültige JPG- oder PNG-Datei");
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw new IOException("Invalid JPG or PNG file");
             boolean jpegSource = "image/jpeg".equals(bounds.outMimeType);
             if (!jpegSource && !"image/png".equals(bounds.outMimeType))
-                throw new IOException("Bitte eine JPG- oder PNG-Datei auswählen");
+                throw new IOException("Select a JPG or PNG file");
             byte[] exif = exifSegment(comment);
             if (jpegSource && Math.max(bounds.outWidth, bounds.outHeight) <= maxSide)
                 return JpegComments.update(source, comment, exif);
@@ -1489,7 +1509,7 @@ public class EditorActivity extends Activity {
             options.inSampleSize = sample;
             options.inPreferredConfig = jpegSource ? Bitmap.Config.RGB_565 : Bitmap.Config.ARGB_8888;
             Bitmap bitmap = BitmapFactory.decodeByteArray(source, 0, source.length, options);
-            if (bitmap == null) throw new IOException("Bild konnte nicht dekodiert werden");
+            if (bitmap == null) throw new IOException("Could not decode image");
             bitmap = orient(bitmap, readOrientation(source));
             int decodedLongest = Math.max(bitmap.getWidth(), bitmap.getHeight());
             Bitmap output = bitmap;
@@ -1511,7 +1531,7 @@ public class EditorActivity extends Activity {
             ByteArrayOutputStream bytes = new ByteArrayOutputStream();
             try {
                 if (!output.compress(Bitmap.CompressFormat.JPEG, 92, bytes))
-                    throw new IOException("JPG konnte nicht gespeichert werden");
+                    throw new IOException("Could not save JPG");
             } finally {
                 output.recycle();
             }
@@ -1547,11 +1567,11 @@ public class EditorActivity extends Activity {
             byte[] user = new byte[prefix.length + text.length];
             System.arraycopy(prefix, 0, user, 0, prefix.length);
             System.arraycopy(text, 0, user, prefix.length, text.length);
-            // IFD0 enthält den Verweis auf das Exif-IFD; dort liegt UserComment (0x9286).
+            // IFD0 points to the Exif IFD, which contains UserComment (0x9286).
             int exifIfdOffset = 8 + 2 + 12 + 4;
             int userOffset = exifIfdOffset + 2 + 12 + 4;
             int tiffSize = userOffset + user.length;
-            if (tiffSize + 8 > 65533) throw new IOException("Kommentar ist zu lang");
+            if (tiffSize + 8 > 65533) throw new IOException("Comment is too long");
             ByteBuffer payload = ByteBuffer.allocate(6 + tiffSize).order(ByteOrder.LITTLE_ENDIAN);
             payload.put(new byte[]{'E','x','i','f',0,0});
             payload.put((byte)'I').put((byte)'I').putShort((short)42).putInt(8);

@@ -15,7 +15,7 @@ final class BoxRecords {
     static void validateName(String name) throws IOException {
         if (name.trim().isEmpty() || name.contains("/") || name.contains("\\")
                 || name.matches(".*[\\p{Cntrl}].*")) {
-            throw new IOException("Box muss einen gültigen Dateinamen enthalten (keine Schrägstriche oder Steuerzeichen).");
+            throw new IOException("Box must contain a valid filename (no slashes or control characters).");
         }
     }
 
@@ -35,7 +35,7 @@ final class BoxRecords {
             if (text.startsWith("\uFEFF")) text = text.substring(1);
             JSONTokener parser = new JSONTokener(text);
             Object value = parser.nextValue();
-            if (parser.nextClean() != 0) throw new JSONException("Zusätzlicher Inhalt");
+            if (parser.nextClean() != 0) throw new JSONException("Additional content");
             java.util.List<JSONObject> records = new java.util.ArrayList<>();
             if (value instanceof JSONArray) {
                 JSONArray array = (JSONArray) value;
@@ -54,10 +54,10 @@ final class BoxRecords {
             } else {
                 throw new JSONException("Objekt oder Array erwartet");
             }
-            if (records.isEmpty()) throw new JSONException("Keine Datensätze vorhanden");
+            if (records.isEmpty()) throw new JSONException("No records available");
             return records;
         } catch (JSONException e) {
-            throw new IOException("Ungültige JSON-Datensätze: " + e.getMessage(), e);
+            throw new IOException("Invalid JSON records: " + e.getMessage(), e);
         }
     }
 
@@ -69,7 +69,7 @@ final class BoxRecords {
         String filename = filename(name);
         Files.createDirectories(directory.toPath());
         Path target = directory.toPath().resolve(filename);
-        if (Files.isSymbolicLink(target)) throw new IOException("Box-Datei darf kein symbolischer Link sein.");
+        if (Files.isSymbolicLink(target)) throw new IOException("Box file must not be a symbolic link.");
         JSONArray records = new JSONArray();
         try {
             if (Files.exists(target)) {
@@ -77,7 +77,7 @@ final class BoxRecords {
                 if (existing.startsWith("\uFEFF")) existing = existing.substring(1);
                 JSONTokener parser = new JSONTokener(existing);
                 Object value = parser.nextValue();
-                if (parser.nextClean() != 0) throw new JSONException("Zusätzlicher Inhalt");
+                if (parser.nextClean() != 0) throw new JSONException("Additional content");
                 if (value instanceof JSONArray) records = (JSONArray) value;
                 else if (value instanceof JSONObject) {
                     JSONObject object = (JSONObject) value;
@@ -96,7 +96,7 @@ final class BoxRecords {
             String device = incoming.optString("device", "");
             // An explicitly selected record is the edit target, independent of its device label.
             if (selectedIndex < -1 || selectedIndex >= records.length()) {
-                throw new IOException("Der ausgewählte Datensatz existiert nicht mehr. Box erneut öffnen.");
+                throw new IOException("The selected record no longer exists. Reopen the box.");
             }
             int match = selectedIndex;
             if (match < 0) {
@@ -141,7 +141,7 @@ final class BoxRecords {
                 Files.deleteIfExists(temporary);
             }
         } catch (JSONException e) {
-            throw new IOException("Ungültige JSON-Daten; bestehende Box-Datei bleibt unverändert.", e);
+            throw new IOException("Invalid JSON data; the existing box file remains unchanged.", e);
         }
         return target.toFile();
     }

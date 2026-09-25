@@ -46,7 +46,7 @@ final class DataIndex {
         Path directory = folder.toPath();
         Files.createDirectories(directory);
         Path target = directory.resolve("records.json");
-        if (Files.isSymbolicLink(target)) throw new IOException("Datendatei darf kein symbolischer Link sein.");
+        if (Files.isSymbolicLink(target)) throw new IOException("Data file must not be a symbolic link.");
         JSONArray array = new JSONArray();
         for (Entry entry : entries) array.put(entry.data);
         Path temp = Files.createTempFile(directory, ".records-", ".tmp");
@@ -54,7 +54,7 @@ final class DataIndex {
             Files.write(temp, array.toString(2).getBytes(StandardCharsets.UTF_8));
             Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (JSONException e) {
-            throw new IOException("Datendatei konnte nicht erstellt werden", e);
+            throw new IOException("Could not create data file", e);
         } finally {
             Files.deleteIfExists(temp);
         }

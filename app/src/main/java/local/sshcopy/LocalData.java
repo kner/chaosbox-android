@@ -27,7 +27,7 @@ final class LocalData {
     static List<String> records(String text) throws JSONException {
         JSONTokener parser = new JSONTokener(text);
         Object value = parser.nextValue();
-        if (parser.nextClean() != 0) throw new JSONException("Zusätzlicher Inhalt nach JSON");
+        if (parser.nextClean() != 0) throw new JSONException("Additional content after JSON");
         List<String> records = new ArrayList<>();
         if (value instanceof JSONArray) {
             JSONArray array = (JSONArray) value;

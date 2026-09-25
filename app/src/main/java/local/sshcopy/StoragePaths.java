@@ -35,11 +35,11 @@ final class StoragePaths {
         for (String reserved : new String[]{"ChaosBox/data", "ChaosBox/.indices", "ChaosBox/Setup"}) {
             File directory = new File(storage, reserved).getCanonicalFile();
             if (overlaps(images, directory) || overlaps(data, directory))
-                throw new IOException("Bild- und Datenordner überschneiden sich mit einem internen App-Ordner: " + directory);
+                throw new IOException("Image and data folders overlap an internal app folder: " + directory);
         }
         if (overlaps(images, data) || overlaps(images, index) || overlaps(data, index)
                 || overlaps(images, legacyData) || overlaps(data, legacyImages))
-            throw new IOException("Bild-, Daten- und Indexordner müssen getrennt sein.");
+            throw new IOException("Image, data and index folders must be separate.");
     }
 
     private static boolean overlaps(File a, File b) {
@@ -88,7 +88,7 @@ final class StoragePaths {
         File root = images;
         File child = new File(root, categoryFolder(category));
         if (!child.getCanonicalFile().getParentFile().equals(root) || Files.isSymbolicLink(child.toPath()))
-            throw new IOException("Ungültiger Kategorieordner: " + child);
+            throw new IOException("Invalid category folder: " + child);
         return child;
     }
 
@@ -104,7 +104,7 @@ final class StoragePaths {
                     result.add(f.toFile());
             });
         } catch (java.io.UncheckedIOException e) {
-            throw new IOException("Datenordner konnte nicht vollständig gelesen werden: " + root, e.getCause());
+            throw new IOException("Could not read the entire data folder: " + root, e.getCause());
         }
         return result;
     }
@@ -162,7 +162,7 @@ final class StoragePaths {
         for (File file : jsonFiles()) if (file.getName().equals(filename)) matches.add(file);
         if (matches.contains(preferred)) return preferred;
         if (matches.size() == 1) return matches.get(0);
-        if (matches.size() > 1) throw new IOException("Box mehrfach vorhanden. Bitte Box leeren und über die Dateiauswahl öffnen.");
-        throw new IOException("Box nicht gefunden: " + filename);
+        if (matches.size() > 1) throw new IOException("Multiple boxes found. Clear the Box field and open the file using the file picker.");
+        throw new IOException("Box not found: " + filename);
     }
 }

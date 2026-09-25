@@ -22,7 +22,7 @@ final class TextSnippets {
                 pending.append('\n').append(raw);
                 if (oddQuotes(raw)) {
                     if (!raw.trim().endsWith("\""))
-                        throw new IOException("Textbaustein " + name + ": Schlusszeichen muss am Zeilenende stehen.");
+                        throw new IOException("Text snippet " + name + ": Closing quotation mark must be at the end of the line.");
                     lines.add(pending.toString());
                     pending = null;
                 }
@@ -45,7 +45,7 @@ final class TextSnippets {
             lines.add(raw);
         }
         if (pending != null)
-            throw new IOException("Textbaustein " + name + ": Schließendes Anführungszeichen fehlt.");
+            throw new IOException("Text snippet " + name + ": Missing closing quotation mark.");
         return lines;
     }
 

@@ -11,7 +11,7 @@ final class RemoteFiles {
         String[] parts = destination.split("/");
         for (String part : parts) {
             if (part.equals("..")) throw new SftpException(ChannelSftp.SSH_FX_FAILURE,
-                    "Übergeordnete Pfade sind als Upload-Ziel nicht erlaubt: " + destination);
+                    "Parent paths are not allowed as upload destinations: " + destination);
         }
         sftp.cd(destination.startsWith("/") ? "/" : escape(home));
         String path = destination.startsWith("/") ? "/" : "";
@@ -24,7 +24,7 @@ final class RemoteFiles {
                 if (missing.id != ChannelSftp.SSH_FX_NO_SUCH_FILE) throw missing;
                 try {
                     sftp.mkdir(part);
-                    log.accept("Zielordner angelegt: " + path);
+                    log.accept("Destination folder created: " + path);
                 } catch (SftpException creation) {
                     // Another client may have created the folder since our first attempt.
                     try { sftp.cd(escape(part)); }

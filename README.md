@@ -1,4 +1,25 @@
-# ChaosBox — integrierte Android-App
+# ChaosBox — Android app
+
+## English interface and form actions
+
+All application labels, dialogs, hints, error messages and source comments are in
+English. Existing standard field labels (`Anzahl`, `Kategorie`, `Kommentar`) are
+displayed as `Quantity`, `Category`, `Comment`, including in existing setups.
+Custom profile labels, categories, snippets and record contents remain user data;
+existing configuration and JSON keys remain compatible.
+
+The form action row contains three equally sized controls:
+
+- **Clear all** (icon): clears the form and selected image or record.
+- **Repeat last search** (return arrow): immediately reruns the last valid search,
+  including after opening a result or clearing the form. It stays disabled until
+  a search has run and resets when the active profile changes.
+- **TXT**: opens the text snippet picker and copies the selected snippet.
+
+Tap Search to enter search mode, enter regular expressions, then tap Search again.
+The system Back action cancels search mode and restores the previous form.
+Search history is retained during the current activity only.
+
 
 Die App enthält jetzt die vollständige xfComment-Bildbearbeitung, JSON-Anzeige
 und den bisherigen SSH-Upload im Paket `local.sshcopy`.

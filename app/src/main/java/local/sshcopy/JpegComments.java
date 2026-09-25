@@ -9,14 +9,14 @@ import java.util.Arrays;
 final class JpegComments {
     static byte[] update(byte[] jpeg, String comment, byte[] newSegment) throws IOException {
         if (jpeg.length < 4 || (jpeg[0] & 255) != 255 || (jpeg[1] & 255) != 216)
-            throw new IOException("Keine gültige JPG-Datei");
+            throw new IOException("Invalid JPG file");
         int p = 2;
         while (p + 4 <= jpeg.length) {
-            if ((jpeg[p] & 255) != 255) throw new IOException("Ungültiges JPG-Segment");
+            if ((jpeg[p] & 255) != 255) throw new IOException("Invalid JPG segment");
             int marker = jpeg[p + 1] & 255;
             if (marker == 218 || marker == 217) break;
             int length = ((jpeg[p + 2] & 255) << 8) | (jpeg[p + 3] & 255);
-            if (length < 2 || p + 2 + length > jpeg.length) throw new IOException("Ungültige JPG-Länge");
+            if (length < 2 || p + 2 + length > jpeg.length) throw new IOException("Invalid JPG length");
             if (marker == 225 && length >= 16 && jpeg[p+4]=='E' && jpeg[p+5]=='x'
                     && jpeg[p+6]=='i' && jpeg[p+7]=='f' && jpeg[p+8]==0 && jpeg[p+9]==0) {
                 byte[] tiff = Arrays.copyOfRange(jpeg, p + 10, p + 2 + length);
@@ -24,7 +24,7 @@ final class JpegComments {
                 ByteArrayOutputStream segment = new ByteArrayOutputStream();
                 segment.write(255); segment.write(225);
                 int size = updated.length + 8;
-                if (size > 65535) throw new IOException("Kommentar ist zu lang");
+                if (size > 65535) throw new IOException("Comment is too long");
                 segment.write(size >> 8); segment.write(size & 255);
                 segment.write(new byte[]{'E','x','i','f',0,0}); segment.write(updated);
                 return splice(jpeg, p, p + 2 + length, segment.toByteArray());
@@ -38,11 +38,11 @@ final class JpegComments {
     static byte[] resizedExifSegment(byte[] jpeg, String comment, byte[] fallback) throws IOException {
         int p = 2;
         while (p + 4 <= jpeg.length) {
-            if ((jpeg[p] & 255) != 255) throw new IOException("Ungültiges JPG-Segment");
+            if ((jpeg[p] & 255) != 255) throw new IOException("Invalid JPG segment");
             int marker = jpeg[p + 1] & 255;
             if (marker == 218 || marker == 217) break;
             int length = ((jpeg[p + 2] & 255) << 8) | (jpeg[p + 3] & 255);
-            if (length < 2 || p + 2 + length > jpeg.length) throw new IOException("Ungültige JPG-Länge");
+            if (length < 2 || p + 2 + length > jpeg.length) throw new IOException("Invalid JPG length");
             if (marker == 225 && length >= 16 && jpeg[p+4]=='E' && jpeg[p+5]=='x'
                     && jpeg[p+6]=='i' && jpeg[p+7]=='f' && jpeg[p+8]==0 && jpeg[p+9]==0) {
                 byte[] tiff = Arrays.copyOfRange(jpeg, p + 10, p + 2 + length);
@@ -56,7 +56,7 @@ final class JpegComments {
                 ByteArrayOutputStream segment = new ByteArrayOutputStream();
                 segment.write(255); segment.write(225);
                 int size = updated.length + 8;
-                if (size > 65535) throw new IOException("Kommentar ist zu lang");
+                if (size > 65535) throw new IOException("Comment is too long");
                 segment.write(size >> 8); segment.write(size & 255);
                 segment.write(new byte[]{'E','x','i','f',0,0}); segment.write(updated);
                 return segment.toByteArray();
@@ -74,9 +74,9 @@ final class JpegComments {
     }
 
     private static int entry(ByteBuffer b, int offset, int tag) throws IOException {
-        if (offset < 8 || offset > b.limit() - 6) throw new IOException("Ungültiges EXIF-Verzeichnis");
+        if (offset < 8 || offset > b.limit() - 6) throw new IOException("Invalid EXIF directory");
         int count = b.getShort(offset) & 65535;
-        if ((long)offset + 6 + count * 12L > b.limit()) throw new IOException("Ungültige EXIF-Einträge");
+        if ((long)offset + 6 + count * 12L > b.limit()) throw new IOException("Invalid EXIF entries");
         for (int i = 0; i < count; i++) {
             int at = offset + 2 + 12 * i;
             if ((b.getShort(at) & 65535) == tag) return at;
@@ -87,10 +87,10 @@ final class JpegComments {
     private static byte[] updateTiff(byte[] original, String comment) throws IOException {
         try {
             if (original.length < 8 || !((original[0]=='I' && original[1]=='I')
-                    || (original[0]=='M' && original[1]=='M'))) throw new IOException("Ungültiges TIFF");
+                    || (original[0]=='M' && original[1]=='M'))) throw new IOException("Invalid TIFF");
             ByteOrder order = original[0]=='I' ? ByteOrder.LITTLE_ENDIAN : ByteOrder.BIG_ENDIAN;
             ByteBuffer old = ByteBuffer.wrap(original).order(order);
-            if (old.getShort(2) != 42) throw new IOException("Ungültiges TIFF");
+            if (old.getShort(2) != 42) throw new IOException("Invalid TIFF");
             byte[] text = comment.getBytes(StandardCharsets.UTF_8);
             byte[] user = new byte[text.length + 8]; // Undefined encoding identifier; payload is UTF-8.
             System.arraycopy(text, 0, user, 8, text.length);
@@ -138,10 +138,10 @@ final class JpegComments {
             int end = Math.max(b.position(), start + user.length);
             b.position(start); b.put(user);
             b.putShort(tag+2, (short)7).putInt(tag+4, user.length).putInt(tag+8, start);
-            if (end + 8 > 65535) throw new IOException("Kommentar ist zu lang");
+            if (end + 8 > 65535) throw new IOException("Comment is too long");
             return Arrays.copyOf(b.array(), end);
         } catch (IndexOutOfBoundsException | IllegalArgumentException e) {
-            throw new IOException("Beschädigte EXIF-Daten", e);
+            throw new IOException("Corrupted EXIF data", e);
         }
     }
 }

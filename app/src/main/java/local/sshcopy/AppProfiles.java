@@ -5,7 +5,15 @@ import java.util.*;
 
 /** INI profiles; field positions always retain their original data meaning. */
 final class AppProfiles {
-    static final String DEFAULT_FIELDS = "Box,Anzahl,Device,Alias,Kategorie,Kommentar,Package";
+    static final String DEFAULT_FIELDS = "Box,Quantity,Device,Alias,Category,Comment,Package";
+    // Translate legacy UI labels while retaining custom labels and storage keys.
+    private static String englishLabel(String label) {
+        if (label.equalsIgnoreCase("Anzahl")) return "Quantity";
+        if (label.equalsIgnoreCase("Kategorie")) return "Category";
+        if (label.equalsIgnoreCase("Kommentar")) return "Comment";
+        return label;
+    }
+
     static final class Profile {
         final String id, title, images, data;
         final String[] fields;
@@ -16,11 +24,11 @@ final class AppProfiles {
             images = values.getOrDefault("bilder", values.getOrDefault("jpg", "")).trim();
             data = values.getOrDefault("daten", "").trim();
             if (title.isEmpty() || images.isEmpty() || data.isEmpty())
-                throw new IOException("App." + id + ": Titel, Bilder/JPG und Daten dürfen nicht leer sein.");
+                throw new IOException("App." + id + ": Titel, Bilder/JPG and Daten must not be empty.");
             String[] labels = values.getOrDefault("felder", DEFAULT_FIELDS).split(",", -1);
-            if (labels.length > 7) throw new IOException("App." + id + ": Felder hat mehr als sieben Positionen.");
+            if (labels.length > 7) throw new IOException("App." + id + ": Felder has more than seven positions.");
             fields = new String[7];
-            for (int i = 0; i < 7; i++) fields[i] = i < labels.length ? labels[i].trim() : "";
+            for (int i = 0; i < 7; i++) fields[i] = i < labels.length ? englishLabel(labels[i].trim()) : "";
             categories = Collections.unmodifiableList(splitCategories(values.getOrDefault("kategorie", "")));
         }
         boolean visible(int position) { return !fields[position].isEmpty(); }
@@ -35,9 +43,9 @@ final class AppProfiles {
         this.imageLimit = imageLimit;
         this.textSnippets = textSnippets;
         this.profiles = Collections.unmodifiableList(profiles);
-        if (profiles.isEmpty()) throw new IOException("Keine [App.Name]-Abschnitte gefunden.");
+        if (profiles.isEmpty()) throw new IOException("No [App.Name] sections found.");
         defaultId = requestedDefault.isEmpty() ? profiles.get(0).id : requestedDefault;
-        if (find(defaultId) == null) throw new IOException("Unbekanntes Standardprofil: " + defaultId);
+        if (find(defaultId) == null) throw new IOException("Unknown default profile: " + defaultId);
     }
     Profile find(String id) {
         for (Profile profile : profiles) if (profile.id.equalsIgnoreCase(id)) return profile;
@@ -55,9 +63,9 @@ final class AppProfiles {
             if (section.equalsIgnoreCase("App")) defaultId = entry.getValue().getOrDefault("standard", "");
             if (section.regionMatches(true, 0, "App.", 0, 4)) {
                 String id = section.substring(4).trim();
-                if (id.isEmpty()) throw new IOException("Leerer App-Profilname.");
+                if (id.isEmpty()) throw new IOException("Empty app profile name.");
                 for (Profile old : profiles) if (old.id.equalsIgnoreCase(id))
-                    throw new IOException("Doppeltes App-Profil: " + id);
+                    throw new IOException("Duplicate app profile: " + id);
                 Map<String, String> values = new LinkedHashMap<>(entry.getValue());
                 values.putIfAbsent("kategorie", oldCategories);
                 profiles.add(new Profile(id, values));
@@ -84,7 +92,7 @@ final class AppProfiles {
                 int pixels = Integer.parseInt(value);
                 if (pixels > 0 && pixels <= 20000) return pixels;
             } catch (NumberFormatException ignored) { }
-            throw new IOException("ImageSize: LIMIT muss eine Pixelzahl von 1 bis 20000 sein.");
+            throw new IOException("ImageSize: LIMIT must be a pixel count from 1 to 20000.");
         }
         return 3000;
     }

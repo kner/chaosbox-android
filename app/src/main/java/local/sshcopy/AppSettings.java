@@ -50,7 +50,7 @@ final class AppSettings {
                     java.util.Arrays.asList(paths.images, paths.data, paths.legacyImages, paths.legacyData));
             for (File root : profileRoots) {
                 for (File previous : roots) if (root.toPath().startsWith(previous.toPath()) || previous.toPath().startsWith(root.toPath()))
-                    throw new IOException("App-Profile benötigen getrennte Bild- und Datenordner: " + root);
+                    throw new IOException("App profiles require separate image and data folders: " + root);
                 roots.add(root);
             }
         }
@@ -62,10 +62,10 @@ final class AppSettings {
     static Selection select(Context context, String id) throws IOException {
         AppProfiles config = configuration(context);
         AppProfiles.Profile profile = config.find(id);
-        if (profile == null) throw new IOException("App-Profil nicht gefunden: " + id);
+        if (profile == null) throw new IOException("App profile not found: " + id);
         Selection selection = new Selection(config, profile);
         if (!preferences(context).edit().putString("selected", id).commit())
-            throw new IOException("Profilauswahl konnte nicht gespeichert werden.");
+            throw new IOException("Could not save profile selection.");
         return selection;
     }
 }

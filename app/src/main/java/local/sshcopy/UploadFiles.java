@@ -26,7 +26,7 @@ final class UploadFiles {
 
     private void checkCancelled() throws IOException {
         if (cancelled || Thread.currentThread().isInterrupted())
-            throw new IOException("Synchronisation abgebrochen. Bitte erneut manuell starten.");
+            throw new IOException("Synchronization cancelled. Please restart manually.");
     }
 
     UploadFiles(Context context, Consumer<String> log, StoragePaths paths) {
@@ -48,7 +48,7 @@ final class UploadFiles {
                 }
             } catch (IOException e) {
                 file.delete();
-                throw new IOException("SSH-Zugangsdaten fehlen oder sind nicht lesbar: " + name + ". Einrichtung laut README prüfen.", e);
+                throw new IOException("SSH credentials are missing or unreadable: " + name + ". Check the setup instructions in README.", e);
             }
         }
         return file;
@@ -59,10 +59,10 @@ final class UploadFiles {
         ChannelSftp sftp = null;
         int copied = 0;
         int skipped = 0;
-        String stage = "Lokale Dateien vorbereiten";
+        String stage = "Prepare local files";
         try {
             checkCancelled();
-            show("Synchronisation wird gestartet.");
+            show("Starting synchronization.");
             java.util.Map<File, String> files = new java.util.LinkedHashMap<>();
             for (File file : paths.imageFiles()) {
                 if (!paths.canUpload(file)) continue;
@@ -77,11 +77,11 @@ final class UploadFiles {
             java.util.Set<String> targets = new java.util.HashSet<>();
             for (java.util.Map.Entry<File, String> entry : files.entrySet()) {
                 if (!targets.add(entry.getValue() + "/" + entry.getKey().getName()))
-                    throw new IOException("Mehrere lokale Dateien haben dasselbe Upload-Ziel: " + entry.getKey().getName());
+                    throw new IOException("Multiple local files have the same upload destination: " + entry.getKey().getName());
             }
-            if (files.isEmpty()) { show("Keine Dateien zum Hochladen."); return; }
+            if (files.isEmpty()) { show("No files to upload."); return; }
             checkCancelled();
-            stage = "SSH-Zugangsdaten laden";
+            stage = "Load SSH credentials";
             Security.removeProvider("BC");
             Security.addProvider(new BouncyCastleProvider());
             JSch ssh = new JSch();
@@ -93,11 +93,11 @@ final class UploadFiles {
             session.setConfig("StrictHostKeyChecking", "yes");
             session.setConfig("PreferredAuthentications", "publickey");
             session.setTimeout(30000);
-            stage = "SSH-Verbindung zu " + Config.HOST + ":" + Config.PORT + " herstellen";
+            stage = "Connect via SSH to " + Config.HOST + ":" + Config.PORT + " ";
             show(stage);
             session.connect(15000);
             checkCancelled();
-            stage = "SFTP-Verbindung öffnen";
+            stage = "Open SFTP connection";
             sftp = (ChannelSftp) session.openChannel("sftp");
             sftp.connect(15000);
             String remoteHome = sftp.pwd();
@@ -106,18 +106,18 @@ final class UploadFiles {
                 checkCancelled();
                 File file = entry.getKey();
                 String destination = entry.getValue();
-                stage = "Datei " + file.getName() + " → " + destination;
+                stage = "File " + file.getName() + " → " + destination;
                 if (!destination.equals(currentDestination)) {
                     try {
                         RemoteFiles.ensureDirectory(sftp, remoteHome, destination, this::show);
                     } catch (com.jcraft.jsch.SftpException e) {
-                        throw new IOException("Zielordner konnte nicht angelegt oder geöffnet werden: " + destination + " — " + e.getMessage(), e);
+                        throw new IOException("Could not create or open destination folder: " + destination + " — " + e.getMessage(), e);
                     }
                     currentDestination = destination;
                 }
                 // Recheck before opening; never recurse or follow a source symlink.
                 if (!paths.canUpload(file) || !Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
-                    throw new IOException("Quelldatei nicht mehr verfügbar oder verändert: " + file.getName());
+                    throw new IOException("Source file is no longer available or has changed: " + file.getName());
                 }
 
                 String remote = escape(file.getName());
@@ -126,7 +126,7 @@ final class UploadFiles {
 
                 if (!skip) {
 
-                    show("Hochladen: " + file.getName() + " → " + destination);
+                    show("Uploading: " + file.getName() + " → " + destination);
                     // Publish only complete files. A cancelled transfer must not replace the server copy.
                     String temporary = ".chaosbox-" + java.util.UUID.randomUUID() + ".upload";
                     boolean published = false;
@@ -147,18 +147,18 @@ final class UploadFiles {
                         if (!published && sftp.isConnected()) {
                             try { sftp.rm(temporary); }
                             catch (com.jcraft.jsch.SftpException cleanup) {
-                                show("Temporäre Serverdatei konnte nicht entfernt werden: " + temporary);
+                                show("Could not remove temporary server file: " + temporary);
                             }
                         }
                     }
                 } else skipped++;
             }
             checkCancelled();
-            show("Abgeschlossen: " + copied + " Datei(en) hochgeladen, " + skipped
-                    + " unveränderte oder neuere Serverdatei(en) übersprungen.");
+            show("Completed: " + copied + " file(s) uploaded, " + skipped
+                    + " unchanged or newer server file(s) skipped.");
         } catch (Exception e) {
-            throw new IOException((cancelled ? "Synchronisation abgebrochen" : "Upload fehlgeschlagen")
-                    + " nach " + copied + " Datei(en).\nSchritt: " + stage
+            throw new IOException((cancelled ? "Synchronization cancelled" : "Upload failed")
+                    + " after " + copied + " file(s).\nStep: " + stage
                     + "\n" + UploadErrors.describe(e), e);
         } finally {
             activeSession = null;
@@ -175,7 +175,7 @@ final class UploadFiles {
         java.nio.file.Path parent = file.getCanonicalFile().getParentFile().toPath();
         java.nio.file.Path root = parent.startsWith(primary.toPath())
                 ? primary.toPath() : legacy.toPath();
-        if (!parent.startsWith(root)) throw new IOException("Datei außerhalb des Datenordners: " + file);
+        if (!parent.startsWith(root)) throw new IOException("File outside the data folder: " + file);
         String relative = root.relativize(parent).toString().replace(File.separatorChar, '/');
         return relative.isEmpty() ? "" : "/" + relative;
     }

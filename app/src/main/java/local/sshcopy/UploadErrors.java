@@ -12,13 +12,13 @@ final class UploadErrors {
         for (Throwable cause = error; cause != null && seen.add(cause); cause = cause.getCause()) {
             String message = cause.getMessage();
             if (message == null || message.trim().isEmpty()) message = cause.getClass().getSimpleName();
-            if (cause instanceof UnknownHostException) message = "Servername konnte nicht aufgelöst werden: " + message;
-            else if (cause instanceof SocketTimeoutException) message = "Zeitüberschreitung bei der Verbindung: " + message;
+            if (cause instanceof UnknownHostException) message = "Could not resolve server name: " + message;
+            else if (cause instanceof SocketTimeoutException) message = "Connection timed out: " + message;
             else if (cause instanceof SftpException) {
                 int code = ((SftpException) cause).id;
-                String label = code == 3 ? "Zugriff auf dem Server verweigert"
-                        : code == 2 ? "Datei oder Zielordner auf dem Server fehlt"
-                        : code == 6 || code == 7 ? "Verbindung zum Server unterbrochen" : "SFTP-Fehler";
+                String label = code == 3 ? "Server access denied"
+                        : code == 2 ? "Server file or destination folder is missing"
+                        : code == 6 || code == 7 ? "Connection to server lost" : "SFTP error";
                 message = label + " (Code " + code + "): " + message;
             }
             if (details.indexOf(message) < 0) {

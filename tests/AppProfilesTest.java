@@ -32,6 +32,9 @@ public final class AppProfilesTest {
         AppProfiles.Profile pictures = profiles.find("Bilderbox");
         check(pictures.visible(0) && !pictures.visible(1) && !pictures.visible(2), "Empty inner positions hidden");
         check(pictures.fields[3].equals("Tags") && pictures.visible(4) && pictures.visible(5), "Stable field positions");
+        check(pictures.fields[4].equals("Category") && pictures.fields[5].equals("Comment"),
+                "Legacy field labels appear in English");
+        check(profiles.find("Chaobox").fields[1].equals("Quantity"), "English default quantity label");
         check(!pictures.visible(6), "Omitted trailing position hidden");
         for (int i = 0; i < 7; i++) {
             check(profiles.find("Chaobox").visible(i), "Missing Felder uses defaults");
@@ -65,7 +68,10 @@ public final class AppProfilesTest {
             StoragePaths original = StoragePaths.forProfile(root.toFile(), profiles.find("Chaobox"));
             StoragePaths other = StoragePaths.forProfile(root.toFile(), pictures);
             check(!original.index.equals(other.index), "Separate indices");
-            check(other.legacyData.equals(other.data), "Other profiles never import Chaosbox boxes");
+            check(other.legacyData.equals(root.resolve("Bilderbox/daten").toFile().getCanonicalFile()),
+                    "Bilderbox reads only its own legacy data folder");
+            check(other.data.equals(root.resolve("Bilderbox/boxes").toFile().getCanonicalFile()),
+                    "Bilderbox uses its migrated boxes folder");
             check(other.legacyImages.equals(other.images), "Other profiles never import Chaosbox images");
             StoragePaths snapshot = StoragePaths.snapshot(root.toFile(), other.images.getPath(), other.data.getPath(), pictures.id);
             check(snapshot.index.equals(other.index), "Upload snapshot preserves profile index");

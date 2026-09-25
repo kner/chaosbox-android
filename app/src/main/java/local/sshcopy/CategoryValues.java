@@ -12,7 +12,7 @@ final class CategoryValues {
         Set<String> roots = new LinkedHashSet<>();
         JSONTokener parser = new JSONTokener(raw);
         readContainer(parser, roots);
-        if (parser.nextClean() != 0) throw new JSONException("Zusätzlicher JSON-Inhalt");
+        if (parser.nextClean() != 0) throw new JSONException("Additional JSON content");
         return String.join(", ", roots);
     }
 
@@ -25,7 +25,7 @@ final class CategoryValues {
                 readContainer(parser, roots);
                 char separator = parser.nextClean();
                 if (separator == ']') return;
-                if (separator != ',') throw new JSONException("Ungültige JSON-Liste");
+                if (separator != ',') throw new JSONException("Invalid JSON list");
             }
         }
         if (start != '{') throw new JSONException("JSON-Objekt erwartet");
@@ -34,13 +34,13 @@ final class CategoryValues {
         while (true) {
             Object key = parser.nextValue();
             if (!(key instanceof String) || parser.nextClean() != ':')
-                throw new JSONException("Ungültiger JSON-Schlüssel");
+                throw new JSONException("Invalid JSON key");
             Object value = parser.nextValue();
             if ("category".equalsIgnoreCase((String) key)
                     || "kategorie".equalsIgnoreCase((String) key)) add(roots, value);
             char separator = parser.nextClean();
             if (separator == '}') break;
-            if (separator != ',') throw new JSONException("Ungültiges JSON-Objekt");
+            if (separator != ',') throw new JSONException("Invalid JSON object");
         }
     }
 
