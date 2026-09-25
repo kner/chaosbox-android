@@ -235,23 +235,36 @@ public class EditorActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
         root.setBackgroundColor(Color.rgb(247, 248, 252));
 
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        root.addView(header, matchWrap());
+
         profileTitle = text(selection.profile.title, 26, Color.rgb(26, 31, 44));
         profileTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        profileTitle.setSingleLine(true);
+        profileTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
         profileTitle.setOnClickListener(v -> chooseProfile());
         profileTitle.setFocusable(true);
         profileTitle.setTooltipText("App-Profil auswählen");
-        root.addView(profileTitle, matchWrap());
+        LinearLayout.LayoutParams profileParams = new LinearLayout.LayoutParams(0, -2, 1);
+        profileParams.setMarginEnd(dp(8));
+        header.addView(profileTitle, profileParams);
         synchronize = new Button(this);
         synchronize.setText("(c) kner");
         synchronize.setTextSize(12);
         synchronize.setAllCaps(false);
+        synchronize.setSingleLine(true);
+        synchronize.setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_upload, 0, 0, 0);
+        synchronize.setCompoundDrawableTintList(synchronize.getTextColors());
+        synchronize.setCompoundDrawablePadding(dp(6));
         synchronize.setMinWidth(0);
         synchronize.setMinimumWidth(0);
         synchronize.setPadding(dp(10), 0, dp(10), 0);
         synchronize.setContentDescription("(c) kner – manuell synchronisieren");
         synchronize.setTooltipText("Gespeicherte Dateien jetzt hochladen");
         synchronize.setOnClickListener(v -> synchronizeManually());
-        root.addView(synchronize, new LinearLayout.LayoutParams(-2, dp(48)));
+        header.addView(synchronize, new LinearLayout.LayoutParams(-2, dp(48)));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         choose = icon(actions, android.R.drawable.ic_menu_gallery, "JPG oder PNG auswählen", v -> chooseImage());
