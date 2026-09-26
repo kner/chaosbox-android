@@ -1,23 +1,25 @@
-#signieren einer release-Version des apk
-#1.Schritt:
-#keytool -genkeypair -v \
-#  -keystore sshcopy-release.jks \
-#  -alias sshcopy \
-#  -keyalg RSA -keysize 2048 -validity 10000 \
-#  -dname "CN=SSHCopy"
+cd /home/roland/Dokumente/ChatGPT/chaosbox-android
+set -e
 
-#2. Schritt
-  BUILD_TOOLS="${ANDROID_HOME:-/opt/android-sdk}/build-tools/35.0.0"
-  "$BUILD_TOOLS/zipalign" -f -p 4 \
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+export PATH="$JAVA_HOME/bin:$PATH"
+
+# Release-APK bauen
+/opt/gradle-8.11.1/bin/gradle --no-daemon :app:assembleRelease
+
+# APK ausrichten
+/opt/android-sdk/build-tools/35.0.0/zipalign -f -P 16 4 \
   app/build/outputs/apk/release/app-release-unsigned.apk \
-  SSHCopy-aligned.apk
-#3.Schritt
-  "$BUILD_TOOLS/apksigner" sign \
-  --ks sshcopy-release.jks \
-  --ks-key-alias sshcopy \
-  --out SSHCopy.apk \
-  SSHCopy-aligned.apk
+  app/build/outputs/apk/release/app-release-aligned.apk
 
-  "$BUILD_TOOLS/apksigner" verify --verbose SSHCopy.apk
-#4. Schritt: installieren
- # adb install -r SSHCopy.apk
+# Mit dem neuen Schlüssel signieren
+/opt/android-sdk/build-tools/35.0.0/apksigner sign \
+  --ks signing-keys/sshcopy-release.jks \
+  --ks-key-alias sshcopy \
+  --ks-pass file:signing-keys/sshcopy-release.password \
+  --out SSHCopy-release.apk \
+  app/build/outputs/apk/release/app-release-aligned.apk
+
+# Signatur prüfen
+/opt/android-sdk/build-tools/35.0.0/apksigner verify \
+  --verbose --print-certs SSHCopy-release.apk

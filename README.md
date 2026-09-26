@@ -258,12 +258,22 @@ javac -d build/test-classes app/src/main/java/local/sshcopy/SourceFiles.java tes
 java -cp build/test-classes local.sshcopy.SourceFilesTest
 ```
 
-## Debug build and installation via ADB
+## Debug and Release installation via ADB
 
 ```bash
+# Build and install Debug
 ./build-apk.sh
-./upload-adb.sh
+./upload-adb-debug.sh
+
+# Build, sign and install Release
+bash ./sign.sh
+./upload-adb-release.sh
 ```
+
+`upload-adb.sh` remains a compatibility entry point for Debug.
+Both upload scripts install the existing APK from the project folder; they do
+not build or sign it. Pass a serial number, for example
+`./upload-adb-release.sh SERIAL`, to select a device.
 
 Enable USB debugging and authorize the computer on the phone. With multiple
 devices connected, use `./upload-adb.sh SERIAL` (see `adb devices`). The script
