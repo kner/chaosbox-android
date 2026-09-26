@@ -24,8 +24,10 @@ place; imported images are saved as separate JPGs. If saving stops on an error,
 the app reports how many files were saved and retains the selection for retry.
 
 Double-tap a JPG/PNG preview to open the image in a separate full-screen view.
-The image fits the available screen while retaining its aspect ratio. Tap
-**Close** or use Android Back to return to the unchanged editor form.
+The image initially fits the screen while retaining its aspect ratio. Pinch with
+two fingers to zoom up to 8× and drag with one finger to move the enlarged image.
+Double-tap to zoom to 2.5× around the tapped point, or to reset an enlarged image.
+Tap **Close** or use Android Back to return to the unchanged editor form.
 
 When saving an image or JSON record, new **Category** values are appended to
 `Kategorie=` in the current profile's section of `setup.ini` and immediately

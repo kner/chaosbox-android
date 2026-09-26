@@ -688,9 +688,7 @@ public class EditorActivity extends Activity {
         fullImageDialog = dialog;
         android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
         frame.setBackgroundColor(Color.BLACK);
-        ImageView image = new ImageView(this);
-        image.setContentDescription("Full-screen image");
-        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        ZoomImageView image = new ZoomImageView(this);
         // Share the decoded bitmap, but use independent drawable bounds for the full-screen view.
         android.graphics.drawable.Drawable drawable = preview.getDrawable();
         android.graphics.drawable.Drawable.ConstantState state = drawable.getConstantState();
