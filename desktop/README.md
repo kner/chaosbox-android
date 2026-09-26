@@ -10,7 +10,7 @@ their configured language.
 On Ubuntu 24.04 the dependencies are available from Ubuntu packages:
 
 ```bash
-sudo apt install python3-tk python3-pil python3-pil.imagetk python3-paramiko libimage-exiftool-perl ffmpeg
+sudo apt install python3-tk python3-pil python3-pil.imagetk python3-paramiko libimage-exiftool-perl ffmpeg xclip
 ```
 
 From the repository root:
@@ -31,6 +31,30 @@ the runtime to `~/.local/share/chaosbox` and creates
 `~/.local/share/applications/chaosbox.desktop`. Run the installer again after
 updating the source; existing setup and data are retained. No administrator
 privileges are needed for this installation when dependencies are already present.
+
+## Debian package (Ubuntu 24.04)
+
+Build an architecture-independent installer using the system Python and dpkg:
+
+```bash
+cd desktop
+/usr/bin/python3 build_deb.py
+sudo apt install ./dist/chaosbox-desktop_1.0.2_all.deb
+```
+
+Launch **ChaosBox Desktop** from the application menu or run `/usr/bin/chaosbox`.
+The package installs to `/usr/share/chaosbox-desktop`; apt installs its runtime
+dependencies. It includes the current full-screen and file-operation fixes.
+Settings and media remain in the user's home directory and survive removal with
+`sudo apt remove chaosbox-desktop`. SSH credentials are not included.
+
+An earlier per-user installation can leave a second menu entry. The old entry
+uses `~/.local/share/chaosbox`; `/usr/bin/chaosbox` always starts the Debian build.
+To use only the Debian menu entry, remove the old
+`~/.local/share/applications/chaosbox.desktop` launcher.
+
+For subsequent releases use `build_deb.py --version VERSION`. The `dist` folder
+contains the `.deb` and a SHA-256 checksum file.
 
 ## Data and settings
 
@@ -62,7 +86,12 @@ profile then uses `/tmp/chaosbox-demo/ChaosBox/JPG`.
 
 ## Editing
 
-- **Open JPG / MP4** supports multiple selection with Ctrl/Shift; **Other files …**
+- **Open JPG / MP4** shows a scrollable thumbnail grid with **1–10 columns**.
+  Click tiles to toggle multiple selections, Shift-click to select a range, or
+  use **Select all** / **Clear**. The selection survives column changes.
+  Previews load in the background; unavailable previews remain selectable.
+  Thumbnail size follows the column width while preserving image proportions.
+  **Other files …**
   also imports PNG files. The first file supplies initial values and preview.
   **Save** writes the same form values to every selected file.
 - Existing profile media is updated in place. Imports receive a separate `_cb`
@@ -83,6 +112,8 @@ profile then uses `/tmp/chaosbox-demo/ChaosBox/JPG`.
 - Double-click an image preview for full-screen viewing. Zoom using the mouse
   wheel or +/−, drag to pan, double-click for 2.5×/reset, and press Escape to close.
   Zoom reaches 8×; full-screen images are loaded up to 12000 pixels per side.
+  **COPY** copies the displayed image as PNG to the clipboard for pasting with
+  Ctrl+V (requires `xclip`; also works in Ubuntu's XWayland session).
   MP4 files show a still preview, without an embedded video player.
 - **TXT** opens configured text snippets and copies the selection to the clipboard.
 - Keyboard shortcuts: Ctrl+O opens media, Ctrl+S saves, Ctrl+F enters/runs search.

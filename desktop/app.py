@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import argparse
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
+import io
 import json
 from pathlib import Path
 import queue
+import shutil
+import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -15,6 +19,18 @@ from tkinter import ttk, filedialog, messagebox, simpledialog
 from PIL import Image, ImageTk
 
 import core
+
+
+def copy_image_clipboard(image):
+    """Publish actual PNG pixels, with xclip retaining clipboard ownership."""
+    executable = shutil.which("xclip")
+    if executable is None:
+        raise RuntimeError("Image copy requires xclip. Install it with: sudo apt install xclip")
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    subprocess.run([executable, "-selection", "clipboard", "-target", "image/png", "-in"],
+                   input=buffer.getvalue(), stdout=subprocess.DEVNULL,
+                   stderr=subprocess.DEVNULL, check=True, timeout=15)
 
 
 class ImageCanvas(tk.Canvas):
@@ -95,6 +111,12 @@ class ImageCanvas(tk.Canvas):
             self.after_cancel(self.pending)
         self.pending = self.after(16, self.draw)
 
+    def destroy(self):
+        if self.pending is not None:
+            self.after_cancel(self.pending)
+            self.pending = None
+        super().destroy()
+
     def draw(self):
         self.pending = None
         self.delete("all")
@@ -120,9 +142,178 @@ class ImageCanvas(tk.Canvas):
             self.create_text(18, 18, anchor="nw", text=f"{self.zoom:.1f}×", fill="white", font=("Sans", 12, "bold"))
 
 
+class MediaGrid(ttk.Frame):
+    """Scrollable thumbnail chooser; only visible tiles are rendered and loaded."""
+
+    def __init__(self, parent, paths, base, changed):
+        super().__init__(parent)
+        self.paths, self.base, self.changed = list(paths), base, changed
+        self.selected = set()
+        self.anchor = None
+        self.columns = 4
+        self.cache = OrderedDict()
+        self.cache_sizes = {}
+        self.photos = []
+        self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="thumbnails")
+        self.future = None
+        self.pending = None
+        self.canvas = tk.Canvas(self, background="#f1f5f9", highlightthickness=0,
+                                takefocus=True)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.scroll)
+        scrollbar.pack(side="right", fill="y")
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.bind("<Configure>", lambda e: self.redraw())
+        self.canvas.bind("<Button-1>", self.click)
+        self.canvas.bind("<Button-4>", lambda e: self.scroll("scroll", -1, "units"))
+        self.canvas.bind("<Button-5>", lambda e: self.scroll("scroll", 1, "units"))
+        self.canvas.bind("<MouseWheel>", lambda e: self.scroll("scroll", -1 if e.delta > 0 else 1, "units"))
+        self.canvas.bind("<Control-a>", lambda e: self.select_all())
+        self.pending = self.after(60, self.poll)
+
+    def set_columns(self, value):
+        self.columns = max(1, min(10, int(value)))
+        self.redraw()
+
+    def scroll(self, *args):
+        self.canvas.yview(*args)
+        self.redraw()
+
+    def selection(self):
+        return [path for index, path in enumerate(self.paths) if index in self.selected]
+
+    def select_all(self):
+        self.selected = set(range(len(self.paths)))
+        self.changed()
+        self.redraw()
+        return "break"
+
+    def clear_selection(self):
+        self.selected.clear()
+        self.anchor = None
+        self.changed()
+        self.redraw()
+
+    def click(self, event):
+        self.canvas.focus_set()
+        column = min(self.columns - 1, int(event.x // self.cell_width))
+        index = int(self.canvas.canvasy(event.y) // self.cell_height) * self.columns + column
+        if not 0 <= index < len(self.paths):
+            return
+        if event.state & 1 and self.anchor is not None:
+            self.selected.update(range(min(self.anchor, index), max(self.anchor, index) + 1))
+        else:
+            if index in self.selected:
+                self.selected.remove(index)
+            else:
+                self.selected.add(index)
+            self.anchor = index
+        self.changed()
+        self.redraw()
+
+    def redraw(self):
+        canvas = self.canvas
+        width = max(1, canvas.winfo_width())
+        self.cell_width = width / self.columns
+        self.thumb_size = max(24, int(self.cell_width) - 16)
+        self.cell_height = self.thumb_size + 66
+        rows = (len(self.paths) + self.columns - 1) // self.columns
+        canvas.configure(scrollregion=(0, 0, width, rows * self.cell_height),
+                         yscrollincrement=max(20, self.cell_height // 3))
+        canvas.delete("all")
+        self.photos.clear()
+        top = max(0, int(canvas.canvasy(0) // self.cell_height))
+        bottom = int((canvas.canvasy(0) + canvas.winfo_height()) // self.cell_height) + 1
+        self.visible = list(range(top * self.columns, min(len(self.paths), bottom * self.columns)))
+        if not self.paths:
+            canvas.create_text(width / 2, 60, text="No media found. Use Other files … to import images.",
+                               width=max(100, width - 40), fill="#475569")
+        for index in self.visible:
+            path = self.paths[index]
+            x = (index % self.columns) * self.cell_width
+            y = (index // self.columns) * self.cell_height
+            selected = index in self.selected
+            canvas.create_rectangle(x + 3, y + 3, x + self.cell_width - 3, y + self.cell_height - 3,
+                                    fill="#dbeafe" if selected else "white",
+                                    outline="#2563eb" if selected else "#cbd5e1", width=2 if selected else 1)
+            if index in self.cache:
+                image = self.cache[index]
+                self.cache.move_to_end(index)
+                if image is not None:
+                    scale = self.thumb_size / max(image.size)
+                    thumbnail = image.resize((max(1, round(image.width * scale)),
+                                              max(1, round(image.height * scale))), Image.Resampling.LANCZOS)
+                    photo = ImageTk.PhotoImage(thumbnail, master=canvas)
+                    self.photos.append(photo)
+                    canvas.create_image(x + self.cell_width / 2, y + 8 + self.thumb_size / 2, image=photo)
+                else:
+                    canvas.create_text(x + self.cell_width / 2, y + self.thumb_size / 2,
+                                       text="Preview unavailable", width=self.thumb_size, fill="#64748b")
+            else:
+                canvas.create_text(x + self.cell_width / 2, y + self.thumb_size / 2,
+                                   text="Loading…", width=self.thumb_size, fill="#64748b")
+            label = str(path.relative_to(self.base)) if path.is_relative_to(self.base) else path.name
+            max_chars = max(6, int((self.cell_width - 14) / 8) * 2)
+            if len(label) > max_chars:
+                label = label[:max_chars - 1] + "…"
+            canvas.create_text(x + self.cell_width / 2, y + self.thumb_size + 12,
+                               anchor="n", text=label, width=max(12, self.cell_width - 14),
+                               font=("Sans", 9), fill="#0f172a")
+            canvas.create_text(x + 9, y + 9, anchor="nw", text="☑" if selected else "☐",
+                               fill="#1d4ed8", font=("Sans", 14, "bold"))
+
+    def poll(self):
+        self.pending = None
+        if self.future is not None and self.future.done():
+            index, future = self.loading, self.future
+            self.future = None
+            try:
+                self.cache[index] = future.result()
+            except Exception:
+                self.cache[index] = None
+            self.cache_sizes[index] = self.loading_size
+            # Bound decoded image memory as well as the number of small tiles.
+            pixels = sum(image.width * image.height for image in self.cache.values() if image is not None)
+            while len(self.cache) > 200 or (pixels > 16_000_000 and len(self.cache) > 1):
+                removed, image = self.cache.popitem(last=False)
+                self.cache_sizes.pop(removed, None)
+                if image is not None:
+                    pixels -= image.width * image.height
+            self.redraw()
+        if self.future is None:
+            for index in getattr(self, "visible", []):
+                if index not in self.cache or (self.cache[index] is not None
+                                              and self.cache_sizes[index] < self.thumb_size):
+                    self.loading = index
+                    self.loading_size = self.thumb_size
+                    self.future = self.worker.submit(core.load_preview, self.paths[index],
+                                                     (self.thumb_size, self.thumb_size))
+                    break
+        self.pending = self.after(60, self.poll)
+
+    def destroy(self):
+        if self.pending is not None:
+            self.after_cancel(self.pending)
+            self.pending = None
+        # changed closes over this grid and Tk variables. Break that cycle on
+        # the UI thread: otherwise a later worker allocation can collect it and
+        # run Tk destructors there (potentially while holding executor locks).
+        self.changed = None
+        self.photos.clear()
+        self.cache.clear()
+        self.cache_sizes.clear()
+        self.worker.shutdown(wait=False, cancel_futures=True)
+        self.future = None
+        super().destroy()
+        # Canvas.master points back to this frame even after Tk destruction.
+        self.canvas = None
+
+
 class App:
     def __init__(self, root, settings):
         self.root, self.settings = root, settings
+        self.window_icon = tk.PhotoImage(file=str(Path(__file__).with_name("chaosbox.png")))
+        root.iconphoto(True, self.window_icon)
         root.title("ChaosBox — Desktop")
         root.geometry("1240x850")
         root.minsize(850, 620)
@@ -132,6 +323,7 @@ class App:
         self.media, self.box_path, self.records, self.record_index = [], None, [], None
         self.created = ""
         self.preview_path = None
+        self.fullscreen_window = None
         self.search_mode, self.before_search, self.last_search = False, None, None
         self.cancel_upload = threading.Event()
         self.uploading = False
@@ -285,33 +477,38 @@ class App:
     def drain(self):
         if self.closing:
             return
-        for _ in range(100):
-            try:
-                item = self.events.get_nowait()
-            except queue.Empty:
-                break
-            if item[0] == "progress":
-                self.status.set(item[1])
-                if self.upload_text is not None and self.upload_text.winfo_exists():
-                    self.upload_text.insert("end", item[1] + "\n")
-                    self.upload_text.see("end")
-            else:
-                self.busy = False
-                self.progress.stop()
-                self.update_controls()
-                if item[0] == "done":
-                    self.status.set("Ready")
-                    if item[2]:
-                        item[2](item[1])
-                elif item[2]:
-                    item[2](item[1])
-                else:
-                    self.error(item[1])
-        if not self.closing:
-            self.root.after(80, self.drain)
+        try:
+            for _ in range(100):
+                try:
+                    item = self.events.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    if item[0] == "progress":
+                        self.status.set(item[1])
+                        if self.upload_text is not None and self.upload_text.winfo_exists():
+                            self.upload_text.insert("end", item[1] + "\n")
+                            self.upload_text.see("end")
+                    else:
+                        self.busy = False
+                        self.progress.stop()
+                        self.update_controls()
+                        if item[0] == "done":
+                            self.status.set("Ready")
+                            if item[2]:
+                                item[2](item[1])
+                        elif item[2]:
+                            item[2](item[1])
+                        else:
+                            self.error(item[1])
+                except Exception as error:
+                    self.root.report_callback_exception(type(error), error, error.__traceback__)
+        finally:
+            if not self.closing:
+                self.root.after(80, self.drain)
 
     def error(self, error):
-        self.status.set(str(error).splitlines()[0])
+        self.status.set(str(error).splitlines()[0] if str(error) else type(error).__name__)
         messagebox.showerror("ChaosBox", str(error), parent=self.root)
 
     def initialize(self):
@@ -383,16 +580,31 @@ class App:
     def media_dialog(self, paths):
         dialog = tk.Toplevel(self.root)
         dialog.title("Open JPG / MP4 — all subfolders")
-        dialog.geometry("760x540")
+        dialog.geometry("1000x700")
+        dialog.minsize(640, 400)
         dialog.transient(self.root)
         dialog.grab_set()
-        ttk.Label(dialog, text="Select multiple files with Ctrl or Shift.", padding=12).pack(anchor="w")
-        listing = tk.Listbox(dialog, selectmode="extended", font=("Sans", 11), exportselection=False)
-        listing.pack(fill="both", expand=True, padx=12)
-        for path in paths:
-            listing.insert("end", str(path.relative_to(self.profile.images)))
+        toolbar = ttk.Frame(dialog, padding=12)
+        toolbar.pack(fill="x")
+        ttk.Label(toolbar, text="Click to select multiple files · Shift-click selects a range").pack(side="left")
+        columns = tk.StringVar(value=str(getattr(self, "media_columns", 4)))
+        picker = ttk.Combobox(toolbar, textvariable=columns, values=list(range(1, 11)),
+                              state="readonly", width=3)
+        picker.pack(side="right")
+        ttk.Label(toolbar, text="Columns").pack(side="right", padx=8)
+        count = tk.StringVar(value=f"0 / {len(paths)} selected")
+        def changed():
+            count.set(f"{len(grid.selected)} / {len(paths)} selected")
+            open_button.configure(state="normal" if grid.selected else "disabled")
+        grid = MediaGrid(dialog, paths, self.profile.images, changed)
+        grid.pack(fill="both", expand=True, padx=12)
+        def change_columns(event=None):
+            self.media_columns = int(columns.get())
+            grid.set_columns(self.media_columns)
+        picker.bind("<<ComboboxSelected>>", change_columns)
+        change_columns()
         def open_selected(event=None):
-            selected = [paths[index] for index in listing.curselection()]
+            selected = grid.selection()
             if selected:
                 dialog.destroy()
                 self.open_media(selected)
@@ -405,10 +617,15 @@ class App:
         buttons = ttk.Frame(dialog, padding=12)
         buttons.pack(fill="x")
         ttk.Button(buttons, text="Other files …", command=external).pack(side="left")
+        ttk.Button(buttons, text="Select all", command=grid.select_all).pack(side="left", padx=6)
+        ttk.Button(buttons, text="Clear", command=grid.clear_selection).pack(side="left")
+        ttk.Label(buttons, textvariable=count).pack(side="left", padx=8)
         ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right")
-        ttk.Button(buttons, text="Open", command=open_selected).pack(side="right", padx=8)
-        listing.bind("<Double-Button-1>", open_selected)
-        listing.bind("<Return>", open_selected)
+        open_button = ttk.Button(buttons, text="Open", command=open_selected, state="disabled")
+        open_button.pack(side="right", padx=8)
+        dialog.bind("<Return>", open_selected)
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
+        grid.canvas.focus_set()
 
     def preview_result(self, path):
         if path is None:
@@ -735,6 +952,10 @@ class App:
             show()
 
     def fullscreen(self, event=None):
+        if self.fullscreen_window is not None and self.fullscreen_window.winfo_exists():
+            self.fullscreen_window.lift()
+            self.fullscreen_window.focus_set()
+            return
         if self.busy or self.preview.original is None or self.preview_path is None or self.preview_path.suffix.lower() == ".mp4":
             return
         path = self.preview_path
@@ -742,6 +963,7 @@ class App:
 
     def show_fullscreen(self, image):
         dialog = tk.Toplevel(self.root)
+        self.fullscreen_window = dialog
         dialog.title("Image — ChaosBox")
         dialog.attributes("-fullscreen", True)
         dialog.configure(background="#101820")
@@ -753,6 +975,13 @@ class App:
         ttk.Button(bar, text="−", command=lambda: view.scale(1 / 1.25)).pack(side="left")
         ttk.Button(bar, text="+", command=lambda: view.scale(1.25)).pack(side="left")
         ttk.Button(bar, text="Fit", command=view.reset).pack(side="left", padx=5)
+        def copied(result):
+            self.status.set("Image copied. Paste with Ctrl+V.")
+            if copy_button.winfo_exists():
+                copy_button.configure(text="COPIED")
+        copy_button = ttk.Button(bar, text="COPY",
+                                 command=lambda: self.task(lambda: copy_image_clipboard(image), copied))
+        copy_button.pack(side="left", padx=5)
         ttk.Button(bar, text="Close", command=dialog.destroy).pack(side="left")
         dialog.bind("<Escape>", lambda e: dialog.destroy())
         dialog.transient(self.root)
@@ -829,7 +1058,7 @@ def main():
                 raise SystemExit(f"Missing program: {tool}")
         print(f"Dependencies ready: Tk {tk.TkVersion}, Pillow {Image.__version__}, Paramiko {paramiko.__version__}")
         return
-    root = tk.Tk()
+    root = tk.Tk(className="Chaosbox")
     root.withdraw()
     try:
         settings = core.Settings(args.data_root, args.state_dir, args.setup)

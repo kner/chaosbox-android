@@ -13,7 +13,7 @@ def install(home=None, credentials=True):
     source = Path(__file__).resolve().parent
     target = home / ".local/share/chaosbox"
     (target / "desktop").mkdir(parents=True, exist_ok=True)
-    for name in ("app.py", "core.py", "setup.ini", "chaosbox.svg"):
+    for name in ("app.py", "core.py", "setup.ini", "chaosbox.svg", "chaosbox.png"):
         core.atomic_write(target / "desktop" / name, (source / name).read_bytes(), mode=0o644)
     launcher = target / "run-desktop.sh"
     core.atomic_write(launcher, '#!/usr/bin/env bash\nset -euo pipefail\ncd -- "$(dirname -- "${BASH_SOURCE[0]}")"\nexec /usr/bin/python3 desktop/app.py "$@"\n', mode=0o755)
@@ -41,7 +41,7 @@ def install(home=None, credentials=True):
     core.atomic_write(desktop, "[Desktop Entry]\nType=Application\nVersion=1.0\nName=ChaosBox Desktop\n"
                       "Comment=Edit image and video metadata, JSON records and synchronize with SSH\n"
                       f"Exec={quoted(launcher)}\nIcon={target / 'desktop/chaosbox.svg'}\n"
-                      "Terminal=false\nCategories=Graphics;Utility;\nStartupNotify=true\n", mode=0o644)
+                      "Terminal=false\nCategories=Graphics;Utility;\nStartupNotify=true\nStartupWMClass=Chaosbox\n", mode=0o644)
     return target, settings.path, desktop
 
 
