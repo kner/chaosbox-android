@@ -40,6 +40,32 @@ public final class AppProfilesTest {
             check(profiles.find("Chaobox").visible(i), "Missing Felder uses defaults");
             check(!profiles.find("Archiv").visible(i), "Empty Felder hides all fields");
         }
+        String extended = AppProfiles.withCategory(text, "bilderbox", "  Keramik, fotos, KERAMIK  ");
+        check(AppProfiles.parse(extended).find("Bilderbox").categories.equals(
+                java.util.Arrays.asList("Fotos", "Gemälde", "Keramik")), "Append new categories once, ignoring case");
+        check(extended.replace(
+                "Kategorie=Fotos, Gemälde, Fotos, Keramik", "Kategorie=Fotos, Gemälde, Fotos").equals(text),
+                "Only the selected category line changes");
+        check(AppProfiles.withCategory(extended, "Bilderbox", "keramik").equals(extended), "Repeated save is unchanged");
+        check(AppProfiles.withCategory(text, "Bilderbox", "  , ").equals(text), "Ignore empty category");
+        String missing = AppProfiles.withCategory(text, "Chaobox", "Elektro");
+        check(AppProfiles.parse(missing).find("Chaobox").categories.equals(java.util.List.of("Elektro")),
+                "Insert missing category key before next profile");
+        check(AppProfiles.parse(AppProfiles.withCategory(text, "Archiv", "Ende")).find("Archiv")
+                .categories.equals(java.util.List.of("Ende")), "Insert category at end of file");
+        String windows = text.replace("\n", "\r\n");
+        check(AppProfiles.withCategory(windows, "Bilderbox", "Keramik").replace(
+                "Kategorie=Fotos, Gemälde, Fotos, Keramik", "Kategorie=Fotos, Gemälde, Fotos").equals(windows),
+                "Preserve CRLF and unrelated setup content");
+        String inherited = "[Kategorie]\nAudio\n" + text;
+        check(AppProfiles.parse(AppProfiles.withCategory(inherited, "Chaobox", "Video"))
+                .find("Chaobox").categories.equals(java.util.List.of("Audio", "Video")), "Preserve inherited categories");
+        check(AppProfiles.parse(AppProfiles.withCategory("[Kategorie]\nAudio\n", "Chaosbox", "Video"))
+                .find("Chaosbox").categories.equals(java.util.List.of("Audio", "Video")), "Extend legacy setup");
+        try {
+            AppProfiles.withCategory(text, "Bilderbox", "Bad\n[App.Other]");
+            throw new AssertionError("Multiline category accepted");
+        } catch (IOException expected) { }
         String completed = AppProfiles.withDefaults(text);
         check(completed.contains("Daten=ChaosBox/boxes"), "Older Chaosbox data path updated");
         check(completed.contains("Daten=Bilderbox/boxes"), "Older Bilderbox data path updated");

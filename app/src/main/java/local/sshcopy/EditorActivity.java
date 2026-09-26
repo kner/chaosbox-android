@@ -67,7 +67,7 @@ public class EditorActivity extends Activity {
     private android.net.Uri displayedImage;
     private android.net.Uri beforeSearchImage;
     private Uri selectedUri;
-    private String selectedName;
+    private final List<Uri> selectedImages = new ArrayList<>();
     private ImageView preview;
     private TextView selectedLabel;
     private EditText box;
@@ -167,7 +167,7 @@ public class EditorActivity extends Activity {
         beforeSearchImage = null;
         beforeSearchLabel = null;
         selectedUri = null;
-        selectedName = null;
+        selectedImages.clear();
         openedBoxName = null;
         activeRecord = null;
         createdAt = null;
@@ -885,7 +885,7 @@ public class EditorActivity extends Activity {
                 }
                 runOnUiThread(() -> {
                     selectedUri = null;
-                    selectedName = null;
+                    selectedImages.clear();
                     showImage(null);
                     openedBoxName = source.getName().substring(0, source.getName().length() - 5);
                     deviceRecords.clear();
@@ -929,7 +929,8 @@ public class EditorActivity extends Activity {
         comment.setText(values.comment);
         if (record.source != null) {
             selectedUri = record.image ? Uri.fromFile(record.source) : null;
-            selectedName = record.image ? record.source.getName() : null;
+            selectedImages.clear();
+            if (selectedUri != null) selectedImages.add(selectedUri);
             showImage(record.previewFile == null ? null : Uri.fromFile(record.previewFile));
             selectedLabel.setText("Loaded: " + selection.paths.displayPath(record.source));
         }
@@ -1081,8 +1082,24 @@ public class EditorActivity extends Activity {
                             .setNeutralButton("Other file …", (d, which) -> chooseExternalImage())
                             .setNegativeButton("Cancel", null);
                     if (files.isEmpty()) dialog.setMessage("No JPG files found in the image folder or its subfolders.");
-                    else dialog.setItems(labels, (d, which) -> openImage(Uri.fromFile(files.get(which)), labels[which]));
-                    dialog.show();
+                    else {
+                        boolean[] checked = new boolean[files.size()];
+                        dialog.setMultiChoiceItems(labels, checked, (d, which, selected) -> {
+                            checked[which] = selected;
+                            boolean any = false;
+                            for (boolean value : checked) any |= value;
+                            ((android.app.AlertDialog) d).getButton(android.app.AlertDialog.BUTTON_POSITIVE)
+                                    .setEnabled(any);
+                        });
+                        dialog.setPositiveButton("Open", (d, which) -> {
+                            List<Uri> images = new ArrayList<>();
+                            for (int i = 0; i < checked.length; i++)
+                                if (checked[i]) images.add(Uri.fromFile(files.get(i)));
+                            openImages(images);
+                        });
+                    }
+                    android.app.AlertDialog shown = dialog.show();
+                    if (!files.isEmpty()) shown.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setEnabled(false);
                 });
             } catch (IOException | java.io.UncheckedIOException e) {
                 runOnUiThread(() -> {
@@ -1100,6 +1117,7 @@ public class EditorActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("image/*");
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/jpeg", "image/png"});
         File storage = Environment.getExternalStorageDirectory();
         if (selection.paths.images.toPath().startsWith(storage.toPath())) {
@@ -1169,18 +1187,37 @@ public class EditorActivity extends Activity {
             return;
         }
         if (requestCode == PICK_IMAGE && resultCode == RESULT_OK && data != null) {
-            Uri uri = data.getData();
-            if (uri != null) openImage(uri, queryName(uri));
+            List<Uri> images = new ArrayList<>();
+            android.content.ClipData clips = data.getClipData();
+            if (clips != null) {
+                for (int i = 0; i < clips.getItemCount(); i++) {
+                    Uri uri = clips.getItemAt(i).getUri();
+                    if (uri != null && !images.contains(uri)) images.add(uri);
+                }
+            } else if (data.getData() != null) images.add(data.getData());
+            openImages(images);
         }
     }
 
+    private void openImages(List<Uri> images) {
+        if (images.isEmpty()) return;
+        Uri first = images.get(0);
+        String label = "file".equals(first.getScheme())
+                ? selection.paths.displayPath(new File(first.getPath())) : queryName(first);
+        openImage(first, images.size() == 1 ? label
+                : images.size() + " images selected — preview and initial values: " + label);
+        selectedImages.clear();
+        selectedImages.addAll(images);
+    }
+
     private void openImage(Uri imageUri, String label) {
+        selectedImages.clear();
+        selectedImages.add(imageUri);
         deviceRecords.clear();
         openedBoxName = null;
         activeRecord = null;
         refreshDevices();
         selectedUri = imageUri;
-        selectedName = queryName(selectedUri);
         selectedLabel.setText(label);
         showImage(selectedUri);
         setBusy(true);
@@ -1260,10 +1297,17 @@ public class EditorActivity extends Activity {
         }
         final DeviceRecord originalRecord = activeRecord;
         final Uri imageUri = selectedUri;
-        final String imageName = selectedName;
+        final List<Uri> images = new ArrayList<>(selectedImages);
         setBusy(true);
         worker.execute(() -> {
+            int completed = 0;
             try {
+                try (InputStream ignored = openOrCreateSetupFile()) { }
+                AppSettings.Selection updated = AppSettings.rememberCategory(this, selection, selectedCategory);
+                runOnUiThread(() -> {
+                    selection = updated;
+                    refreshCategories();
+                });
                 if (imageUri == null) {
                     StoragePaths paths = selection.paths;
                     boolean editingBox = originalRecord != null && !originalRecord.image
@@ -1297,30 +1341,45 @@ public class EditorActivity extends Activity {
                     savedLocally("Saved: " + saved.getAbsolutePath());
                     return;
                 }
-                File existing = existingJpg(imageUri);
-                byte[] result;
-                Uri saved;
-                if (existing != null) {
-                    result = ImageProcessor.process(new java.io.FileInputStream(existing),
-                            userComment, selection.config.imageLimit);
-                    saved = overwriteJpg(existing, result);
-                } else {
-                    result = ImageProcessor.process(getContentResolver().openInputStream(imageUri),
-                            userComment, selection.config.imageLimit);
-                    saved = writeOutput(result, outputName(imageName), selectedCategory);
+                long totalBytes = 0;
+                for (int i = 0; i < images.size(); i++) {
+                    Uri source = images.get(i);
+                    File existing = existingJpg(source);
+                    byte[] result;
+                    Uri saved;
+                    if (existing != null) {
+                        result = ImageProcessor.process(new java.io.FileInputStream(existing),
+                                userComment, selection.config.imageLimit);
+                        saved = overwriteJpg(existing, result);
+                    } else {
+                        result = ImageProcessor.process(getContentResolver().openInputStream(source),
+                                userComment, selection.config.imageLimit);
+                        saved = writeOutput(result, outputName(queryName(source)), selectedCategory);
+                    }
+                    images.set(i, saved);
+                    completed++;
+                    totalBytes += result.length;
+                    final int index = i;
+                    runOnUiThread(() -> {
+                        // Keep successful outputs selected, including after a partial failure.
+                        selectedImages.set(index, saved);
+                        if (index == 0) {
+                            selectedUri = saved;
+                            showImage(null);
+                            showImage(saved);
+                        }
+                    });
                 }
-                runOnUiThread(() -> {
-                    selectedUri = saved;
-                    selectedName = saved.getLastPathSegment();
-                    showImage(null);
-                    showImage(saved);
-                });
-                savedLocally("Saved: " + saved.getPath()
-                        + " (" + result.length / 1024 + " kB)");
+                savedLocally("Saved: " + (images.size() == 1 ? images.get(0).getPath()
+                        : images.size() + " images") + " (" + totalBytes / 1024 + " kB)");
             } catch (Exception e) {
+                final String message = (images.size() > 1
+                        ? "Saved " + completed + " of " + images.size() + " images. Stopped at "
+                                + (completed < images.size() ? images.get(completed) : "completion") + ": " : "Error: ") + e.getMessage();
                 runOnUiThread(() -> {
                     setBusy(false);
-                    Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    selectedLabel.setText(message);
+                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
                 });
             }
         });

@@ -55,6 +55,30 @@ final class AppSettings {
             }
         }
     }
+    static Selection rememberCategory(Context context, Selection current, String category) throws IOException {
+        if (category.trim().isEmpty()) return current;
+        File file = new File(Environment.getExternalStorageDirectory(), Config.SETUP);
+        String original = LocalData.read(file);
+        String updated = AppProfiles.withCategory(original, current.profile.id, category);
+        AppProfiles config = AppProfiles.parse(updated);
+        validate(config);
+        Selection result = new Selection(config, config.find(current.profile.id));
+        if (!updated.equals(original)) {
+            android.util.AtomicFile target = new android.util.AtomicFile(file);
+            FileOutputStream out = null;
+            try {
+                out = target.startWrite();
+                out.write(updated.getBytes(StandardCharsets.UTF_8));
+                target.finishWrite(out);
+            } catch (IOException e) {
+                if (out != null) target.failWrite(out);
+                throw e;
+            }
+        }
+        preferences(context).edit().putString("setup-cache", updated).apply();
+        return result;
+    }
+
     static Selection load(Context context) throws IOException {
         AppProfiles config = configuration(context);
         return new Selection(config, config.selected(preferences(context).getString("selected", "")));

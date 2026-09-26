@@ -136,6 +136,53 @@ final class AppProfiles {
         return String.join(", ", splitCategories(String.join(",", entries)));
     }
 
+    /** Append new category labels only to the selected profile's INI list. */
+    static String withCategory(String text, String profileId, String entered) throws IOException {
+        if (entered.indexOf('\n') >= 0 || entered.indexOf('\r') >= 0)
+            throw new IOException("Category must be a single line.");
+        Profile profile = parse(text).find(profileId);
+        if (profile == null) throw new IOException("App profile not found: " + profileId);
+        List<String> additions = new ArrayList<>();
+        for (String candidate : splitCategories(entered)) {
+            boolean known = false;
+            for (String existing : profile.categories)
+                if (existing.equalsIgnoreCase(candidate)) known = true;
+            if (!known) additions.add(candidate);
+        }
+        if (additions.isEmpty()) return text;
+        String newline = text.contains("\r\n") ? "\r\n" : "\n";
+        List<String> lines = new ArrayList<>(Arrays.asList(text.split("\r?\n", -1)));
+        boolean inProfile = false, found = false;
+        int categoryLine = -1, insertion = lines.size();
+        for (int i = 0; i < lines.size(); i++) {
+            String line = lines.get(i).trim();
+            if (line.startsWith("[") && line.endsWith("]")) {
+                if (inProfile) insertion = i;
+                inProfile = line.substring(1, line.length() - 1).trim().equalsIgnoreCase("App." + profile.id);
+                if (inProfile) { found = true; insertion = lines.size(); }
+            } else if (inProfile) {
+                int equals = line.indexOf('=');
+                if (equals >= 0 && line.substring(0, equals).trim().equalsIgnoreCase("Kategorie"))
+                    categoryLine = i;
+            }
+        }
+        if (!found) return withCategory(withDefaults(text), profileId, entered);
+        if (categoryLine >= 0) {
+            String raw = lines.get(categoryLine);
+            String value = raw.substring(raw.indexOf('=') + 1).trim();
+            lines.set(categoryLine, raw.substring(0, raw.indexOf('=') + 1) + value
+                    + (value.isEmpty() ? "" : ", ") + String.join(", ", additions));
+        } else {
+            List<String> values = new ArrayList<>(profile.categories);
+            values.addAll(additions);
+            if (insertion == lines.size() && lines.get(lines.size() - 1).isEmpty()) insertion--;
+            lines.add(insertion, "Kategorie=" + String.join(", ", values));
+        }
+        String updated = String.join(newline, lines);
+        parse(updated);
+        return updated;
+    }
+
     static String withDefaults(String text) throws IOException {
         Map<String, Map<String, String>> sections = sections(text);
         boolean hasProfiles = false;

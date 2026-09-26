@@ -16,6 +16,19 @@ The form action row contains three equally sized controls:
   a search has run and resets when the active profile changes.
 - **TXT**: opens the text snippet picker and copies the selected snippet.
 
+The JPG dialog supports selecting multiple files with checkboxes, then **Open**.
+**Other file …** also supports multiple JPG/PNG files. The first image supplies
+the preview and initial form values. **Save** writes the same form metadata to
+all selected images. Existing JPGs in the configured image folder are updated in
+place; imported images are saved as separate JPGs. If saving stops on an error,
+the app reports how many images were saved and retains the selection for retry.
+
+When saving an image or JSON record, new **Category** values are appended to
+`Kategorie=` in the current profile's section of `setup.ini` and immediately
+appear in the dropdown. Empty entries are ignored; existing entries are compared
+without regard to case. Commas separate multiple categories, as in the setup.
+Other profiles retain their own lists.
+
 Tap Search to enter search mode, enter regular expressions, then tap Search again.
 The system Back action cancels search mode and restores the previous form.
 Search history is retained during the current activity only.
