@@ -69,6 +69,7 @@ public class EditorActivity extends Activity {
     private Uri selectedUri;
     private final List<Uri> selectedImages = new ArrayList<>();
     private ImageView preview;
+    private android.app.Dialog fullImageDialog;
     private TextView selectedLabel;
     private EditText box;
     private android.widget.AutoCompleteTextView category;
@@ -182,7 +183,7 @@ public class EditorActivity extends Activity {
             field.setError(null);
         }
         showImage(null);
-        selectedLabel.setText("No image or record selected");
+        selectedLabel.setText("No media or record selected");
         refreshDevices();
         applyProfileLabels();
     }
@@ -270,7 +271,7 @@ public class EditorActivity extends Activity {
         header.addView(synchronize, new LinearLayout.LayoutParams(-2, dp(48)));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
-        choose = icon(actions, android.R.drawable.ic_menu_gallery, "Select JPG or PNG", v -> chooseImage());
+        choose = icon(actions, android.R.drawable.ic_menu_gallery, "Select JPG, PNG or MP4", v -> chooseImage());
         openJson = icon(actions, android.R.drawable.ic_menu_agenda, "Open JSON", v -> openJson());
         search = icon(actions, android.R.drawable.ic_menu_search, "Search", v -> searchClicked());
         save = icon(actions, android.R.drawable.ic_menu_save, "Save data", v -> saveImage());
@@ -289,7 +290,7 @@ public class EditorActivity extends Activity {
         snippets.setPadding(dp(8), 0, dp(8), 0);
         snippets.setOnClickListener(v -> chooseTextSnippet());
 
-        selectedLabel = text("No image selected", 14, Color.DKGRAY);
+        selectedLabel = text("No media selected", 14, Color.DKGRAY);
         LinearLayout.LayoutParams labelParams = matchWrap();
         labelParams.setMargins(0, dp(8), 0, dp(12));
         root.addView(selectedLabel, labelParams);
@@ -298,6 +299,21 @@ public class EditorActivity extends Activity {
         preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
         preview.setAdjustViewBounds(true);
         preview.setBackgroundColor(Color.LTGRAY);
+        preview.setContentDescription("Image preview. Double-tap to view full screen.");
+        preview.setOnClickListener(v -> showFullImage());
+        android.view.GestureDetector imageGestures = new android.view.GestureDetector(this,
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+                    @Override public boolean onDown(android.view.MotionEvent event) { return true; }
+                    @Override public boolean onDoubleTap(android.view.MotionEvent event) {
+                        preview.performClick();
+                        return true;
+                    }
+                });
+        preview.setOnTouchListener((view, event) -> {
+            if (displayedImage == null || isVideo(displayedImage)) return false;
+            imageGestures.onTouchEvent(event);
+            return true;
+        });
 
         LinearLayout formActions = new LinearLayout(this);
         formActions.setOrientation(LinearLayout.HORIZONTAL);
@@ -538,7 +554,7 @@ public class EditorActivity extends Activity {
 
     private List<DataIndex.Entry> rebuildIndex() throws IOException {
         return DataIndex.rebuild(selection.paths, file -> {
-            String raw = ImageProcessor.readUserComment(new java.io.FileInputStream(file));
+            String raw = readMediaComment(Uri.fromFile(file));
             try { return new JSONObject(raw); }
             catch (JSONException e) {
                 JSONObject record = new JSONObject();
@@ -619,7 +635,7 @@ public class EditorActivity extends Activity {
                 initializeStorage();
                 StoragePaths paths = selection.paths;
                 List<String> warnings = paths.migrate(file -> {
-                    String raw = ImageProcessor.readUserComment(new FileInputStream(file));
+                    String raw = readMediaComment(Uri.fromFile(file));
                     return MetadataData.parse(raw).category;
                 });
                 rebuildIndex();
@@ -644,7 +660,76 @@ public class EditorActivity extends Activity {
     private void showImage(Uri image) {
         displayedImage = image;
         if (image == null) preview.setImageDrawable(null);
-        else preview.setImageURI(image);
+        else if (isVideo(image)) {
+            preview.setImageDrawable(null);
+            worker.execute(() -> {
+                Bitmap thumbnail = null;
+                android.media.MediaMetadataRetriever retriever = new android.media.MediaMetadataRetriever();
+                try {
+                    retriever.setDataSource(this, image);
+                    thumbnail = Build.VERSION.SDK_INT >= 27
+                            ? retriever.getScaledFrameAtTime(-1, android.media.MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 960, 960)
+                            : retriever.getFrameAtTime();
+                } catch (RuntimeException ignored) { /* Metadata editing also works without a preview frame. */ }
+                finally { try { retriever.release(); } catch (IOException ignored) { } }
+                final Bitmap frame = thumbnail;
+                runOnUiThread(() -> {
+                    if (!isDestroyed() && image.equals(displayedImage)) preview.setImageBitmap(frame);
+                    else if (frame != null) frame.recycle();
+                });
+            });
+        } else preview.setImageURI(image);
+    }
+
+    private void showFullImage() {
+        if (displayedImage == null || isVideo(displayedImage) || preview.getDrawable() == null
+                || isDestroyed() || (fullImageDialog != null && fullImageDialog.isShowing())) return;
+        android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        fullImageDialog = dialog;
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
+        frame.setBackgroundColor(Color.BLACK);
+        ImageView image = new ImageView(this);
+        image.setContentDescription("Full-screen image");
+        image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        // Share the decoded bitmap, but use independent drawable bounds for the full-screen view.
+        android.graphics.drawable.Drawable drawable = preview.getDrawable();
+        android.graphics.drawable.Drawable.ConstantState state = drawable.getConstantState();
+        image.setImageDrawable(state == null ? drawable : state.newDrawable(getResources()).mutate());
+        frame.addView(image, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        Button close = new Button(this);
+        close.setText("Close");
+        close.setContentDescription("Close full-screen image");
+        close.setOnClickListener(v -> dialog.dismiss());
+        android.widget.FrameLayout.LayoutParams closeParams = new android.widget.FrameLayout.LayoutParams(
+                -2, dp(48), Gravity.TOP | Gravity.END);
+        closeParams.setMargins(dp(12), dp(12), dp(12), dp(12));
+        frame.addView(close, closeParams);
+        dialog.setContentView(frame);
+        dialog.setOnDismissListener(d -> {
+            image.setImageDrawable(null);
+            if (fullImageDialog == dialog) fullImageDialog = null;
+        });
+        dialog.show();
+        android.view.Window window = dialog.getWindow();
+        if (window != null) {
+            window.setLayout(-1, -1);
+            window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        }
+    }
+
+    private boolean isVideo(Uri uri) {
+        if (Mp4Comments.isVideo(uri.getPath())) return true;
+        if ("content".equals(uri.getScheme())) {
+            if ("video/mp4".equalsIgnoreCase(getContentResolver().getType(uri))) return true;
+            return Mp4Comments.isVideo(queryName(uri));
+        }
+        return false;
+    }
+
+    private String readMediaComment(Uri uri) throws IOException {
+        return isVideo(uri) ? Mp4Comments.read(getContentResolver().openInputStream(uri))
+                : ImageProcessor.readUserComment(getContentResolver().openInputStream(uri));
     }
 
     private void setSearchMode(boolean enabled) {
@@ -1021,7 +1106,7 @@ public class EditorActivity extends Activity {
         super.onStop();
     }
 
-    private File existingJpg(Uri uri) throws IOException {
+    private File existingMedia(Uri uri) throws IOException {
         File candidate = null;
         if ("file".equals(uri.getScheme())) candidate = new File(uri.getPath());
         else if ("com.android.externalstorage.documents".equals(uri.getAuthority())
@@ -1039,12 +1124,12 @@ public class EditorActivity extends Activity {
         }
         if (candidate == null) return null;
         String name = candidate.getName().toLowerCase(java.util.Locale.ROOT);
-        if (!name.endsWith(".jpg") && !name.endsWith(".jpeg")) return null;
+        if (!name.endsWith(".jpg") && !name.endsWith(".jpeg") && !name.endsWith(".mp4")) return null;
         File root = selection.paths.images;
         File file = candidate.getCanonicalFile();
         if (!file.toPath().startsWith(root.toPath()) || file.equals(root)) return null;
         if (!java.nio.file.Files.isRegularFile(candidate.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS))
-            throw new IOException("JPG source file is unavailable.");
+            throw new IOException("Media source file is unavailable.");
         return file;
     }
 
@@ -1078,10 +1163,10 @@ public class EditorActivity extends Activity {
                     if (isDestroyed()) return;
                     setBusy(false);
                     android.app.AlertDialog.Builder dialog = new android.app.AlertDialog.Builder(this)
-                            .setTitle("Open JPG – all subfolders")
+                            .setTitle("Open JPG / MP4 – all subfolders")
                             .setNeutralButton("Other file …", (d, which) -> chooseExternalImage())
                             .setNegativeButton("Cancel", null);
-                    if (files.isEmpty()) dialog.setMessage("No JPG files found in the image folder or its subfolders.");
+                    if (files.isEmpty()) dialog.setMessage("No JPG or MP4 files found in the media folder or its subfolders.");
                     else {
                         boolean[] checked = new boolean[files.size()];
                         dialog.setMultiChoiceItems(labels, checked, (d, which, selected) -> {
@@ -1105,7 +1190,7 @@ public class EditorActivity extends Activity {
                 runOnUiThread(() -> {
                     if (isDestroyed()) return;
                     setBusy(false);
-                    new android.app.AlertDialog.Builder(this).setTitle("Could not open JPG")
+                    new android.app.AlertDialog.Builder(this).setTitle("Could not open media")
                             .setMessage(e.getMessage()).setPositiveButton("OK", null)
                             .setNeutralButton("Other file …", (d, which) -> chooseExternalImage()).show();
                 });
@@ -1116,9 +1201,9 @@ public class EditorActivity extends Activity {
     private void chooseExternalImage() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("image/*");
+        intent.setType("*/*");
         intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/jpeg", "image/png"});
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/jpeg", "image/png", "video/mp4"});
         File storage = Environment.getExternalStorageDirectory();
         if (selection.paths.images.toPath().startsWith(storage.toPath())) {
             String relative = storage.toPath().relativize(selection.paths.images.toPath()).toString();
@@ -1205,7 +1290,7 @@ public class EditorActivity extends Activity {
         String label = "file".equals(first.getScheme())
                 ? selection.paths.displayPath(new File(first.getPath())) : queryName(first);
         openImage(first, images.size() == 1 ? label
-                : images.size() + " images selected — preview and initial values: " + label);
+                : images.size() + " files selected — preview and initial values: " + label);
         selectedImages.clear();
         selectedImages.addAll(images);
     }
@@ -1233,7 +1318,7 @@ public class EditorActivity extends Activity {
         Uri uri = selectedUri;
         worker.execute(() -> {
             try {
-                String existing = ImageProcessor.readUserComment(getContentResolver().openInputStream(uri));
+                String existing = readMediaComment(uri);
                 MetadataData values = MetadataData.parse(existing);
                 runOnUiThread(() -> {
                     if (uri.equals(selectedUri)) {
@@ -1344,21 +1429,26 @@ public class EditorActivity extends Activity {
                 long totalBytes = 0;
                 for (int i = 0; i < images.size(); i++) {
                     Uri source = images.get(i);
-                    File existing = existingJpg(source);
-                    byte[] result;
+                    File existing = existingMedia(source);
                     Uri saved;
-                    if (existing != null) {
-                        result = ImageProcessor.process(new java.io.FileInputStream(existing),
+                    long savedBytes;
+                    if (isVideo(source)) {
+                        saved = saveVideo(source, existing, userComment, selectedCategory);
+                        savedBytes = new File(saved.getPath()).length();
+                    } else if (existing != null) {
+                        byte[] result = ImageProcessor.process(new java.io.FileInputStream(existing),
                                 userComment, selection.config.imageLimit);
                         saved = overwriteJpg(existing, result);
+                        savedBytes = result.length;
                     } else {
-                        result = ImageProcessor.process(getContentResolver().openInputStream(source),
+                        byte[] result = ImageProcessor.process(getContentResolver().openInputStream(source),
                                 userComment, selection.config.imageLimit);
                         saved = writeOutput(result, outputName(queryName(source)), selectedCategory);
+                        savedBytes = result.length;
                     }
                     images.set(i, saved);
                     completed++;
-                    totalBytes += result.length;
+                    totalBytes += savedBytes;
                     final int index = i;
                     runOnUiThread(() -> {
                         // Keep successful outputs selected, including after a partial failure.
@@ -1371,10 +1461,10 @@ public class EditorActivity extends Activity {
                     });
                 }
                 savedLocally("Saved: " + (images.size() == 1 ? images.get(0).getPath()
-                        : images.size() + " images") + " (" + totalBytes / 1024 + " kB)");
+                        : images.size() + " files") + " (" + totalBytes / 1024 + " kB)");
             } catch (Exception e) {
                 final String message = (images.size() > 1
-                        ? "Saved " + completed + " of " + images.size() + " images. Stopped at "
+                        ? "Saved " + completed + " of " + images.size() + " files. Stopped at "
                                 + (completed < images.size() ? images.get(completed) : "completion") + ": " : "Error: ") + e.getMessage();
                 runOnUiThread(() -> {
                     setBusy(false);
@@ -1441,6 +1531,42 @@ public class EditorActivity extends Activity {
         return input.substring(0, dot) + "_cb.jpg";
     }
 
+    private Uri saveVideo(Uri source, File existing, String comment, String category) throws IOException {
+        File directory = existing == null ? selection.paths.categoryDirectory(true, category) : existing.getParentFile();
+        java.nio.file.Files.createDirectories(directory.toPath());
+        java.nio.file.Path temporary = java.nio.file.Files.createTempFile(directory.toPath(), ".save-video-", ".tmp");
+        File target = existing;
+        boolean reserved = false, published = false;
+        try {
+            try (InputStream input = getContentResolver().openInputStream(source);
+                 OutputStream output = java.nio.file.Files.newOutputStream(temporary)) {
+                if (input == null) throw new IOException("MP4 source is unavailable.");
+                copy(input, output);
+            }
+            Mp4Comments.write(temporary.toFile(), comment);
+            if (target == null) {
+                String name = new File(queryName(source)).getName();
+                int dot = name.lastIndexOf('.');
+                String stem = (dot > 0 ? name.substring(0, dot) : name) + "_cb";
+                target = new File(directory, stem + ".mp4");
+                int suffix = 1;
+                while (!target.createNewFile()) target = new File(directory, stem + "_" + suffix++ + ".mp4");
+                reserved = true;
+            }
+            long modified = Math.max(System.currentTimeMillis(), (target.lastModified() / 1000 + 1) * 1000);
+            java.nio.file.Files.setLastModifiedTime(temporary, java.nio.file.attribute.FileTime.fromMillis(modified));
+            java.nio.file.Files.move(temporary, target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            published = true;
+            android.media.MediaScannerConnection.scanFile(this, new String[]{target.getAbsolutePath()},
+                    new String[]{"video/mp4"}, null);
+            return Uri.fromFile(target);
+        } finally {
+            java.nio.file.Files.deleteIfExists(temporary);
+            if (reserved && !published) java.nio.file.Files.deleteIfExists(target.toPath());
+        }
+    }
+
     private Uri writeOutput(byte[] data, String name, String category) throws IOException {
         File dir = selection.paths.categoryDirectory(true, category);
         java.nio.file.Files.createDirectories(dir.toPath());
@@ -1465,6 +1591,7 @@ public class EditorActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if (fullImageDialog != null) fullImageDialog.dismiss();
         if (activeUpload != null) activeUpload.cancel();
         if (uploadDialog != null) uploadDialog.dismiss();
         worker.shutdownNow();

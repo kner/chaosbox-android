@@ -86,6 +86,20 @@ public final class DataIndexTest {
             check(deepHits.size() == 1 && deepHits.get(0).source.equals(deep.toFile()),
                     "Search resolves correct nested image with duplicate basename");
             check(DataIndex.imageFor(deepHits.get(0), nestedEntries).equals(deep.toFile()), "Nested image preview source");
+            Path video = root.resolve("JPG/other/clip.MP4");
+            byte[] movie = new byte[]{0, 0, 0, 8, 'm', 'o', 'o', 'v'};
+            Files.write(video, movie);
+            Mp4Comments.write(video.toFile(), "{\"box\":\"VIDEO1\",\"device\":\"Camera\",\"comment\":\"Grüße clip\"}");
+            DataIndex.ImageMetadata mediaReader = file -> Mp4Comments.isVideo(file.getName())
+                    ? new JSONObject(Mp4Comments.read(new FileInputStream(file))) : new JSONObject();
+            check(profile.imageFiles().contains(video.toFile()), "Picker and upload include nested uppercase MP4");
+            List<DataIndex.Entry> mediaEntries = DataIndex.rebuild(profile, mediaReader);
+            List<DataIndex.Entry> videos = DataIndex.search(mediaEntries,
+                    DataIndex.compile(Collections.singletonMap("comment", "grüße")));
+            check(videos.size() == 1 && videos.get(0).source.equals(video.toFile()) && videos.get(0).image,
+                    "MP4 JSON Comment is searchable and opens as media");
+            check(DataIndex.imageFor(videos.get(0), mediaEntries).equals(video.toFile()), "Video result preview source");
+            check(DataIndex.rebuild(root.toFile(), mediaReader).size() == 3, "Legacy catalogue includes MP4");
             System.out.println("PASS: catalogue, recursive scan, source paths, refresh, preservation, regex search and related image");
         } finally {
             try (java.util.stream.Stream<Path> paths = Files.walk(root)) {

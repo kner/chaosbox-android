@@ -71,7 +71,7 @@ final class DataIndex {
                     .sorted().toArray(Path[]::new);
             for (Path path : files) {
                 String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-                if (images ? !(name.endsWith(".jpg") || name.endsWith(".jpeg")) : !name.endsWith(".json")) continue;
+                if (images ? !(name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".mp4")) : !name.endsWith(".json")) continue;
                 collectFile(path, images, reader, entries);
             }
         }

@@ -100,7 +100,7 @@ final class StoragePaths {
         try (Stream<Path> paths = Files.walk(root.toPath())) {
             paths.filter(f -> Files.isRegularFile(f, LinkOption.NOFOLLOW_LINKS)).sorted().forEach(f -> {
                 String name = f.getFileName().toString().toLowerCase(Locale.ROOT);
-                if (image ? name.endsWith(".jpg") || name.endsWith(".jpeg") : name.endsWith(".json"))
+                if (image ? name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".mp4") : name.endsWith(".json"))
                     result.add(f.toFile());
             });
         } catch (java.io.UncheckedIOException e) {

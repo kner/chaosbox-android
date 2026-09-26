@@ -16,12 +16,16 @@ The form action row contains three equally sized controls:
   a search has run and resets when the active profile changes.
 - **TXT**: opens the text snippet picker and copies the selected snippet.
 
-The JPG dialog supports selecting multiple files with checkboxes, then **Open**.
-**Other file …** also supports multiple JPG/PNG files. The first image supplies
+The media dialog supports selecting multiple files with checkboxes, then **Open**.
+**Other file …** also supports multiple JPG/PNG/MP4 files. The first selected file supplies
 the preview and initial form values. **Save** writes the same form metadata to
-all selected images. Existing JPGs in the configured image folder are updated in
+all selected files. Existing JPGs in the configured image folder are updated in
 place; imported images are saved as separate JPGs. If saving stops on an error,
-the app reports how many images were saved and retains the selection for retry.
+the app reports how many files were saved and retains the selection for retry.
+
+Double-tap a JPG/PNG preview to open the image in a separate full-screen view.
+The image fits the available screen while retaining its aspect ratio. Tap
+**Close** or use Android Back to return to the unchanged editor form.
 
 When saving an image or JSON record, new **Category** values are appended to
 `Kategorie=` in the current profile's section of `setup.ini` and immediately
@@ -34,12 +38,46 @@ The system Back action cancels search mode and restores the previous form.
 Search history is retained during the current activity only.
 
 
-Die App enthält jetzt die vollständige xfComment-Bildbearbeitung, JSON-Anzeige
-und den bisherigen SSH-Upload im Paket `local.sshcopy`.
+The app now includes the complete xfComment image editor, JSON viewer,
+and the existing SSH upload functionality in the `local.sshcopy` package.
 
-## Speicherpfade und Kategorieordner
+## MP4 videos
 
-In `ChaosBox/Setup/setup.ini` werden die Basisordner konfiguriert:
+The media picker supports JPG/JPEG and MP4 files in the current profile's `JPG`
+folder and all its subfolders. **Other file …** imports JPG, PNG, or MP4 files.
+Mixed selections share the same form values when saved. A video displays a
+thumbnail; the editor does not play videos.
+
+MP4 files store the same JSON fields as JPGs in their ItemList `Comment` (`©cmt`)
+metadata: creation and modification dates, Box, Quantity, Device, Alias, Category,
+Comment, and Package. Existing ItemList and keyed MP4 comments are read; plain
+text comments appear in the Comment field. Existing keyed comments are kept in
+sync when saving. Other metadata and encoded video/audio are preserved without
+recompression. The image pixel limit does not apply to videos.
+
+Existing MP4 files inside the configured media folder are replaced atomically
+at their original location. Imports create a separate `_cb.mp4` file in the
+selected category folder, with a numbered suffix on name collisions. Saving
+uses a temporary file and requires free storage for a full copy of the video.
+MP4 files participate in category-folder organization, the search index, and
+manual SFTP uploads under the same profile and destination rules as JPGs.
+
+Editing supports ordinary, non-fragmented MP4 files with either ISO MP4 or
+QuickTime-style metadata headers. Fragmented MP4 files,
+malformed metadata, movie metadata larger than 32 MiB, and open-ended media boxes
+over 4 GiB are rejected without replacing the source. Normal 64-bit MP4 media
+boxes are supported. On the first save of a file with metadata before the media,
+the updated movie metadata is moved to the end; media offsets remain unchanged.
+
+Run the metadata and interoperability checks with a JDK, FFmpeg, and ExifTool:
+
+```bash
+python3 tests/test-mp4.py
+```
+
+## Storage paths and category folders
+
+Configure the base folders in `ChaosBox/Setup/setup.ini`:
 
 ```ini
 [App]
@@ -53,137 +91,138 @@ Felder=Box,Anzahl,Device,Alias,Kategorie,Kommentar,Package
 Kategorie=Heizung, Wasser, Elektro, Maurer
 ```
 
-Relative Pfade beziehen sich auf den gemeinsamen internen Android-Speicher;
-absolute Pfade sind ebenfalls möglich. Jedes App-Profil definiert eigene Bild- und
-Datenpfade. Die Auswahl erfolgt durch Tippen auf den Titel (Details weiter unten).
+Relative paths refer to Android's shared internal storage; absolute paths are
+also supported. Each app profile defines its own image and data paths. Tap the
+title to select a profile (see below for details).
 
-Bilder liegen unter `JPG/<kategorie>/`. Neue JSON-Boxen liegen direkt unter
-`boxes/`; bestehende Dateien in dessen Unterordnern bleiben dort.
-Der Kategoriename wird kleingeschrieben; eine fehlende Kategorie ergibt `unassigned`.
-Beispiel: `Elektronik > Stromversorgung` wird zu `elektronik`.
-Bei mehreren Kategorien wird vorläufig die erste verwendet. Eine Box mit mehreren
-Datensätzen bleibt vollständig erhalten und verwendet die erste nichtleere Kategorie.
+Images are stored under `JPG/<category>/`. New JSON boxes are stored directly in
+`boxes/`; existing files in its subfolders stay there.
+Category names are converted to lowercase; a missing category becomes `unassigned`.
+For example, `Elektronik > Stromversorgung` becomes `elektronik`.
+For multiple categories, the first is currently used. A box containing multiple
+records is preserved in full and uses the first nonempty category.
 
-`[ImageSize]` mit `LIMIT=3000` legt die maximale längere Bildkante in Pixeln fest.
-Fehlt der Abschnitt, gilt 3000. Kleinere JPGs behalten ihre Bilddaten; beim Speichern
-wird lediglich der UserComment aktualisiert. Die bisherige Dateigrößengrenze entfällt.
-PNG-Dateien werden als JPG mit derselben Pixelgrenze gespeichert; kleinere Bilder
-werden nicht vergrößert. Transparenz wird auf weißem Hintergrund aufgelöst.
-Das PNG-Original bleibt erhalten, auch wenn es im konfigurierten Bildordner liegt.
-Die Bildvorschau zeigt das vollständige Bild im Seitenverhältnis ohne feste
-Höhenbegrenzung; hohe Bilder lassen sich nach unten scrollen.
+`[ImageSize]` with `LIMIT=3000` sets the maximum length of the longer image edge
+in pixels. If the section is missing, the default is 3000. Smaller JPGs retain
+their image data; saving only updates the UserComment. The previous file size
+limit no longer applies. PNG files are saved as JPGs with the same pixel limit;
+smaller images are not enlarged. Transparency is flattened against a white
+background. The original PNG is preserved, even inside the configured image
+folder. The preview displays the entire image at its original aspect ratio,
+without a fixed height limit; tall images can be scrolled vertically.
 
-Beim nächsten App-Start werden lose Bilder direkt in `JPG` nach Kategorie
-in Unterordner einsortiert. Bereits in Unterordnern organisierte Bilder bleiben dort. JSON-Dateien werden weder nach Kategorie verschoben noch
-umbenannt. Die App liest `boxes` rekursiv, einschließlich aller Unterordner.
-Dateien, die eine frühere Version nach `daten` verschoben hat, bleiben an ihrem
-Speicherort lesbar und werden nicht erneut verschoben. Die Dateiinhalte und
-Änderungszeiten bleiben erhalten. Namenskollisionen bei JPGs überschreiben keine
-Dateien; die App meldet stehen gebliebene Quellen. Der Suchindex bleibt getrennt
-unter `ChaosBox/data/records.json`. Fehlende mitgelieferte JPG- und
-Box-Dateien werden beim ersten Start dieser Version einmalig ergänzt. Bereits
-vorhandene Dateien, auch in Unterordnern, werden nicht überschrieben oder verdoppelt.
+On the next app launch, images directly in `JPG` are sorted into category
+subfolders. Images already organized in subfolders stay there. JSON files are
+neither moved by category nor renamed. The app reads `boxes` recursively,
+including all subfolders. Files moved to `daten` by an earlier version remain
+readable at their existing locations and are not moved again. File contents and
+modification times are preserved. JPG filename collisions do not overwrite
+files; the app reports source files that could not be moved. The search index
+remains separate at `ChaosBox/data/records.json`. Missing bundled JPG and box
+files are restored once on the first launch of this version. Existing files,
+including those in subfolders, are neither overwritten nor duplicated.
 
-„JPG öffnen“ zeigt alle JPG/JPEG-Dateien aus dem Bildordner des aktuellen Profils
-und sämtlichen Unterordnern, ohne Tiefenbegrenzung. Relative Pfade unterscheiden
-gleichnamige Dateien. „Andere Datei …“ öffnet die Android-Dateiauswahl zum Import
-weiterer JPG-/PNG-Dateien. Auch Suchtreffer zeigen ihren relativen Quellpfad.
-Öffnen, Suche und Upload berücksichtigen sämtliche vorhandenen Unterordner. Bei
-gleichnamigen Box-Dateien muss die gewünschte Datei über den JSON-Dateidialog
-gewählt werden. Dazu das Feld `Box` leeren und auf „JSON öffnen“ tippen.
-Der spätere Upload erhält die vorhandenen Unterordner auch im Server-Zielverzeichnis;
-fehlende Ordner einschließlich der Server-Basisordner werden dort angelegt.
+“Open JPG” lists all JPG/JPEG files in the current profile's image folder and
+all its subfolders, with no depth limit. Relative paths distinguish files with
+the same name. “Other file …” opens the Android file picker to import additional
+JPG/PNG files. Search results also display their relative source paths.
+Opening, searching, and uploading include all existing subfolders. For box files
+with identical names, select the desired file through the JSON file picker:
+clear the `Box` field and tap “Open JSON”. Uploads preserve the existing
+subfolders in the server destination; missing folders, including the server's
+base folders, are created there.
 
-Die folgenden älteren Pfadangaben werden durch diese Konfiguration ersetzt.
+This configuration supersedes the older path descriptions below.
 
-## Bedienung
+## Usage
 
-Die Startansicht ermöglicht die JPG-/PNG-Auswahl, Box/Kategorie/Kommentar-Eingabe,
-EXIF-UserComment-Metadaten und das Speichern. Neue Bilder von außerhalb des JPG-Ordners
-werden bei Bedarf auf höchstens 3000 Pixel an der längeren Seite reduziert. Bilder aus
-dem konfigurierten JPG-Ordner werden unter demselben Dateinamen atomar
-überschrieben, ohne `_cb`-Zusatz. JPGs bis zum eingestellten Pixel-LIMIT werden
-nicht neu komprimiert; ihre Bilddaten und andere EXIF-Metadaten bleiben erhalten.
-Größere JPGs werden auf die eingestellte längere Bildkante reduziert. Kommentare werden als UTF-8 mit
-undefiniertem EXIF-Zeichensatzpräfix gespeichert; ältere ASCII- und Unicode-Kommentare
-bleiben lesbar. Vorhandene Metadaten werden beim Öffnen übernommen.
+The main screen provides JPG/PNG selection, Box/Category/Comment fields,
+EXIF UserComment metadata, and saving. New images from outside the JPG folder
+are reduced to a maximum of 3000 pixels on their longer edge when needed.
+Images from the configured JPG folder are overwritten atomically using the
+same filename, without a `_cb` suffix. JPGs within the configured pixel LIMIT
+are not recompressed; their image data and other EXIF metadata are preserved.
+Larger JPGs are reduced to the configured longer-edge length. Comments are
+stored as UTF-8 with an undefined EXIF character-set prefix; older ASCII and
+Unicode comments remain readable. Existing metadata is loaded when opening a file.
 
-- Bilder: `/storage/emulated/0/ChaosBox/JPG`
-- Konfiguration: `/storage/emulated/0/ChaosBox/Setup/setup.ini`
-- JSON-Datensätze: `/storage/emulated/0/ChaosBox/boxes`
+- Images: `/storage/emulated/0/ChaosBox/JPG`
+- Configuration: `/storage/emulated/0/ChaosBox/Setup/setup.ini`
+- JSON records: `/storage/emulated/0/ChaosBox/boxes`
 
-Die Kategorie-Liste wird aus `Kategorie=` des gewählten `[App.Name]`-Abschnitts geladen.
-Ein Wechsel des App-Profils zeigt dessen eigene Kategorien. Fehlt die Datei, wird nach
-Erteilung des Speicherzugriffs die mitgelieferte Vorlage angelegt.
-Eine bestehende Konfigurationsdatei wird bei der nötigen Umstellung atomar aktualisiert. Gleichnamige neu importierte
-Bilder erhalten eine nummerierte Kopie. Android 11+ benötigt Zugriff auf alle Dateien.
+The category list is loaded from `Kategorie=` in the selected `[App.Name]`
+section. Switching app profiles displays that profile's own categories. If the
+file is missing, the bundled template is created after storage access is granted.
+An existing configuration file is updated atomically when migration is needed.
+Newly imported images with duplicate names receive numbered filenames.
+Android 11+ requires all-files access.
 
-„Speichern“ speichert ausschließlich lokal und startet keine Synchronisation.
-Der kleine Button „(c) kner“ unter dem Profiltitel startet den Upload manuell für
-das gewählte Profil. Nur bereits gespeicherte Dateien werden übertragen.
-Ein Dialog zeigt den Fortschritt und bleibt bei Fehlern mit der vollständigen
-Meldung geöffnet (Arbeitsschritt, Dateiname/Ziel und Ursache). Nach einem Fehler
-kann über denselben Button erneut gestartet werden. Währenddessen ist das Formular
-gesperrt. „Abbrechen“ oder Verlassen der App beendet die Übertragung; es gibt
-keinen Hintergrunddienst und keinen automatischen Wiederholungsversuch.
-Uploads werden zuerst in temporäre Serverdateien geschrieben und erst nach
-vollständiger Übertragung umbenannt. Bei Verbindungsabbruch kann eine `.upload`-
-Datei auf dem Server zurückbleiben; sie ist keine JPG-/JSON-Quelldatei.
-Der Server muss das Umbenennen über bestehende Dateien unterstützen; andernfalls
-erscheint ein SFTP-Fehler und die bisherige Serverdatei bleibt erhalten.
+“Save” saves locally only and does not start synchronization.
+The small “(c) kner” button below the profile title starts a manual upload for
+the selected profile. Only files that have already been saved are transferred.
+A dialog displays progress and stays open on errors with the full message
+(operation, filename/destination, and cause). After an error, the same button
+can be used to retry. The form is disabled during transfer. “Cancel” or leaving
+the app stops the transfer; there is no background service or automatic retry.
+Uploads are written to temporary server files first and renamed only after
+the transfer is complete. A dropped connection may leave a `.upload` file on
+the server; it is not a JPG/JSON source file. The server must support renaming
+over existing files; otherwise, an SFTP error is displayed and the previous
+server file is preserved.
 
-„JSON öffnen“ lädt `ChaosBox/boxes/<Box>.json` anhand des Feldes Box (wahlweise
-mit `.json`-Endung). Groß-/Kleinschreibung der Eingabe spielt keine Rolle:
-`A11` öffnet und speichert `a11.json`; Box-Dateinamen werden kleingeschrieben. Unterstützt werden einzelne Datensätze, Arrays und Objekte
-mit mehreren Datensätzen unter eigenen Schlüsseln. Das editierbare Device-Feld
-listet die `device`-Werte auf; eine Auswahl lädt Anzahl, Box, Alias, Kategorie,
-Kommentar, Package und Erstellungsdatum des Datensatzes. Ein zuvor geöffnetes
-Bild wird dabei geschlossen. Der erste Datensatz wird zunächst angezeigt.
-Speichern aktualisiert den in der Device-Liste ausgewählten Datensatz in der Box-Datei.
-Eine Änderung der Anzahl erzeugt keinen neuen Eintrag, auch bei doppelten Device-Namen.
-Auch eine Änderung des Device-Namens bearbeitet den ausgewählten Eintrag. Ohne ausgewählten
-Datensatz wird ein bestehendes Device aktualisiert oder ein neues Device angelegt. Zusätzliche JSON-Felder
-und das ursprüngliche Erstellungsdatum bleiben erhalten; count/anzahl und pack/package
-werden beim Aktualisieren konsistent gehalten.
+“Open JSON” loads `ChaosBox/boxes/<Box>.json` using the Box field (with an optional
+`.json` extension). Input is case-insensitive: `A11` opens and saves `a11.json`;
+box filenames are converted to lowercase. Supported formats include individual
+records, arrays, and objects containing multiple records under separate keys.
+The editable Device field lists the `device` values; selecting one loads the
+record's Quantity, Box, Alias, Category, Comment, Package, and creation date.
+Any previously opened image is closed. The first record is displayed initially.
+Saving updates the record selected in the Device list within the box file.
+Changing the quantity does not create a new entry, even with duplicate Device
+names. Changing the Device name also edits the selected entry. Without a selected
+record, an existing Device is updated or a new Device is created. Additional JSON
+fields and the original creation date are preserved; count/anzahl and pack/package
+are kept consistent when updating.
 
-Beim manuellen Upload bleiben die Unterordner von JPG und boxes erhalten.
-Fehlende Server-Zielordner werden einschließlich aller übergeordneten Ordner
-automatisch angelegt. Jeder angelegte Ordner erscheint im Uploadprotokoll.
-Fehlende Schreibrechte oder andere Serverfehler werden im Dialog angezeigt.
-Die Übertragung erfolgt ausschließlich von der APK zum Server und nur für Dateien
-innerhalb von `/storage/emulated/0/ChaosBox`. Andere Profilordner wie `Bilderbox`
-werden nicht hochgeladen. Es gibt keinen Download, keinen Abgleich zurück zur APK
-und keine Übertragung von Löschungen zwischen App und Server.
-Bilder aus JPG und JSON-Dateien aus boxes werden in den konfigurierten
-Server-Zielordner hochgeladen, wenn sie fehlen oder lokal neuer sind. Gleich alte
-oder neuere Serverdateien bleiben erhalten. Verglichen wird die Änderungszeit
-in ganzen Sekunden; nach dem Upload wird die lokale Änderungszeit übernommen. Servereinstellungen stehen weiterhin in Config.java; SSH-Key
-und known_hosts bleiben im privaten Speicher der App erhalten.
+Manual uploads preserve the subfolders of JPG and boxes. Missing server
+destination folders are created automatically, including all parent folders.
+Each created folder appears in the upload log. Missing write permissions and
+other server errors are shown in the dialog.
+Transfers run only from the APK to the server and only for files within
+`/storage/emulated/0/ChaosBox`. Other profile folders, such as `Bilderbox`,
+are not uploaded. There are no downloads, no synchronization back to the APK,
+and no propagation of deletions between the app and server.
+Images from JPG and JSON files from boxes are uploaded to the configured server
+destination if they are missing there or newer locally. Server files with the
+same or a newer timestamp are preserved. Modification times are compared in
+whole seconds; after upload, the local modification time is applied to the
+server file. Server settings remain in Config.java; the SSH key and known_hosts
+remain in the app's private storage.
 
-## Build und Installation
+## Build and installation
 
 ```bash
 ./build-apk.sh
 ./upload-adb.sh
 ```
 
-Ausgabe: `SSHCopy-debug.apk` (App-Name auf dem Smartphone: ChaosBox).
-Die mitgelieferte Konfiguration stammt ausschließlich aus
-`app/src/main/assets/initial/Setup/setup.ini`. Sie liegt im APK unter
-`assets/initial/Setup/setup.ini` und wird beim Öffnen des Editors nach
-`/storage/emulated/0/ChaosBox/Setup/setup.ini` kopiert, sofern dort noch keine
-Datei vorhanden ist. Eine vorhandene Konfiguration bleibt bei einem App-Update
-erhalten. Um die neue Vorlage auf einem bestehenden Gerät zu übernehmen, die
-vorhandene Datei zuerst sichern und anschließend ersetzen oder entfernen.
-Das ehemalige xfComment-Projekt ist als Quellcode-Archiv unter
-`backups/xfcomment-before-integration.tar.gz` gesichert.
+Output: `SSHCopy-debug.apk` (app name on the phone: ChaosBox).
+The bundled configuration comes exclusively from
+`app/src/main/assets/initial/Setup/setup.ini`. It is packaged in the APK at
+`assets/initial/Setup/setup.ini` and copied to
+`/storage/emulated/0/ChaosBox/Setup/setup.ini` when the editor opens, provided
+no file already exists there. An existing configuration is preserved during
+app updates. To use the new template on an existing device, back up the current
+file first, then replace or remove it.
+The former xfComment project is backed up as a source archive at
+`backups/xfcomment-before-integration.tar.gz`.
 
 ---
 
-## Frühere SSH-Copy-Dokumentation
+## Earlier SSH Copy documentation
 
-Die folgenden Angaben beschreiben teilweise den früheren Stand; für Startansicht
-und Pfade gelten die Angaben oben.
+Some of the following information describes earlier versions; the main screen
+and paths are described above.
 
 # SSH Copy for Android
 
@@ -291,40 +330,44 @@ not moved automatically.
 The intended configuration location is `/storage/emulated/0/ChaosBox/setup/setup.ini`.
 INI parsing is not implemented yet; connection settings still come from Config.java.
 
-Über „Setup bearbeiten“ lässt sich die setup.ini direkt in der App ändern und speichern. Die Kategorien werden danach neu geladen.
+Use “Edit setup.ini” to edit and save setup.ini directly in the app.
+The categories are reloaded afterward.
 
-## Upload-Ziele ab 2.5
+## Upload destinations since 2.5
 
-Bilder aus ChaosBox/JPG gehen nach `storage/app/exif/jpg`, JSON-Dateien aus ChaosBox/boxes nach `storage/app/exif/data`, jeweils relativ zum SFTP-Startverzeichnis. Beide Serverordner müssen existieren und schreibbar sein. Fehlende oder lokal neuere Dateien werden übertragen.
+Images from ChaosBox/JPG go to `storage/app/exif/jpg`, and JSON files from
+ChaosBox/boxes go to `storage/app/exif/data`, both relative to the SFTP starting
+directory. Both server folders must exist and be writable. Missing files and
+files that are newer locally are transferred.
 
-## Gemeinsame Datendatei und Suche
+## Shared data file and search
 
-`ChaosBox/data/records.json` enthält die Datensätze aller JPG/JPEG-Dateien in
-`ChaosBox/JPG` und aller JSON-Dateien in `ChaosBox/boxes`, einschließlich
-Unterordnern. `path` enthält jeweils den Quelldateinamen. Die Datei wird beim
-App-Start, nach jedem Speichern und vor der Suche vollständig und atomar erneuert.
-Fehlerhafte Quellen werden gemeldet; die bisherige Datendatei bleibt erhalten.
+`ChaosBox/data/records.json` contains the records from all JPG/JPEG and MP4 files in
+`ChaosBox/JPG` and all JSON files in `ChaosBox/boxes`, including subfolders.
+`path` contains the source filename for each record. The file is rebuilt
+completely and atomically at app startup, after every save, and before searching.
+Invalid sources are reported; the previous data file is preserved.
 
-Die Lupe schaltet auf leere Suchfelder um. Device und Kategorie sind dann reine
-Texteingaben; Speichern ist gesperrt. Ein zweiter Klick startet die Suche. Reguläre
-Ausdrücke gelten als Teiltreffer ohne Beachtung der Groß-/Kleinschreibung, mehrere
-Felder werden mit UND verknüpft, leere Felder ignoriert. `^...$` sucht einen ganzen
-Feldinhalt. Ungültige Ausdrücke werden am Feld angezeigt. Zurück bricht die Suche ab.
-Ein einzelner Treffer wird direkt geladen, mehrere Treffer stehen zur Auswahl.
-Danach ist die normale Bearbeitung wieder aktiv. Bei Bildtreffern wird das Bild
-geöffnet, bei JSON-Treffern wird ein Bild mit gleicher Box und gleichem Device
-angezeigt, sofern vorhanden; gespeichert wird weiterhin ein JSON-Datensatz.
+The magnifying glass switches to empty search fields. Device and Category then
+become plain text inputs, and saving is disabled. A second tap starts the search.
+Regular expressions match substrings without regard to case; multiple fields
+are combined with AND, and empty fields are ignored. Use `^...$` to match an
+entire field value. Invalid expressions are flagged on the field. Back cancels
+the search. A single result is loaded directly; multiple results are offered
+for selection. Normal editing then resumes. Image results open the image;
+JSON results display an image with the same Box and Device if one exists,
+while saving continues to update a JSON record.
 
-Suchfelder: Alias und Kommentar durchsuchen jeweils Device, Alias und Kommentar.
-Device durchsucht Device und Kommentar; Kategorie durchsucht Kategorie und Kommentar. Pro Eingabe genügt ein Treffer in
-einem dieser Zielfelder; mehrere ausgefüllte Suchfelder bleiben UND-verknüpft.
+Search fields: Alias and Comment each search Device, Alias, and Comment.
+Device searches Device and Comment; Category searches Category and Comment.
+Each input needs a match in only one of its target fields; multiple populated
+search fields are still combined with AND.
 
+### App profiles and field labels
 
-### App-Profile und Feldüberschriften
-
-Die gemeinsame Datei `ChaosBox/Setup/setup.ini` unterstützt beliebig viele
-Abschnitte `[App.Name]`. `[App]` kann mit `Standard=Chaosbox` das anfängliche
-Profil festlegen; sonst wird der erste App-Unterabschnitt verwendet.
+The shared `ChaosBox/Setup/setup.ini` file supports any number of `[App.Name]`
+sections. `[App]` can specify the initial profile using `Standard=Chaosbox`;
+otherwise, the first App subsection is used.
 
 ```ini
 [App]
@@ -345,45 +388,43 @@ Felder=Box,,,Tags,Kategorie,Kommentar
 Kategorie=Fotos, Gemälde, Dokumente
 ```
 
-Ein Tippen auf den Titel öffnet die Profilauswahl. Die Auswahl bleibt über
-App-Neustarts erhalten. Ein Wechsel setzt das geöffnete Formular zurück und
-verwendet die Bild- und JSON-Ordner des gewählten Profils. Ungespeicherte Eingaben
-sollten vorher gespeichert werden. Während eines Uploads ist der Profilwechsel gesperrt. Die konfigurierten Server-Zielpfade bleiben gemeinsam.
+Tapping the title opens the profile picker. The selection persists across app
+restarts. Switching profiles resets the open form and uses the selected profile's
+image and JSON folders. Save any unsaved changes first. Profile switching is
+disabled during uploads. The configured server destination paths remain shared.
 
-`JPG` (alternativ `Bilder`) und `Daten` sind relativ zum gemeinsamen internen
-Speicher oder absolut. Profile benötigen getrennte Ordner. Nur JPG-Dateien werden
-nach Kategorie in kleingeschriebene Unterordner bzw. `unassigned` einsortiert.
-JSON-Dateien bleiben im jeweiligen `boxes`-Ordner oder dessen Unterordnern.
-Frühere Standardangaben `Daten=ChaosBox/daten` und `Daten=Bilderbox/daten` werden
-auf `boxes` umgestellt; bereits dorthin verschobene Dateien bleiben zusätzlich lesbar.
+`JPG` (alternatively `Bilder`) and `Daten` can be relative to shared internal
+storage or absolute. Profiles require separate folders. Only JPG files are
+sorted by category into lowercase subfolders or `unassigned`.
+JSON files remain in the respective `boxes` folder or its subfolders.
+Earlier defaults `Daten=ChaosBox/daten` and `Daten=Bilderbox/daten` are migrated
+to `boxes`; files already moved to the earlier locations remain readable as well.
 
-`Felder` hat sieben feste Positionen: Box, Anzahl, Device, Alias, Kategorie,
-Kommentar, Package. Leere Positionen und fehlende Positionen am Ende blenden
-Überschrift und Eingabe aus. Im Beispiel heißt Alias nun Tags; Anzahl, Device
-und Package sind verborgen. Fehlt die ganze `Felder`-Zeile, sind alle sieben
-Standardfelder sichtbar. Die JSON-Schlüssel bleiben unverändert; verborgene
-Werte eines geöffneten Datensatzes bleiben erhalten.
+`Felder` has seven fixed positions: Box, Quantity, Device, Alias, Category,
+Comment, Package. Empty positions and omitted trailing positions hide both
+the label and input. In the example, Alias is renamed Tags; Quantity, Device,
+and Package are hidden. If the entire `Felder` line is missing, all seven default
+fields are visible. JSON keys remain unchanged; hidden values in an opened
+record are preserved.
 
-Bestehende `[Pfade]`-Dateien werden weiterhin gelesen und beim Öffnen/Speichern
-der Setup-Datei in ein `[App.Chaosbox]`-Profil überführt. Eigene Pfade bleiben erhalten.
+Existing files with a `[Pfade]` section are still read and converted to an
+`[App.Chaosbox]` profile when the setup file is opened or saved. Custom paths
+are preserved.
 
+The previous global `[Kategorie]` section is removed when opening an older
+`setup.ini`. Its entries are copied into every profile without its own
+`Kategorie=` line. Existing profile-specific categories are preserved.
+An empty `Kategorie=` line produces only the “Uncategorized” placeholder.
 
-Der bisherige globale `[Kategorie]`-Abschnitt wird beim Öffnen einer älteren
-`setup.ini` entfernt. Seine Einträge werden in jedes Profil ohne eigene
-`Kategorie=`-Zeile übernommen. Bereits profilbezogene Kategorien bleiben erhalten.
-Eine leere Zeile `Kategorie=` erzeugt nur den Platzhalter „Ohne Kategorie“.
+If the `Box` field is empty when “Open JSON” is tapped, the app opens the Android
+file picker, as it does for image selection, starting in the active profile's
+`Daten` folder (`boxes`) where possible. JSON files within that folder and its
+subfolders can be selected. The selected file is opened and edited at its
+original location.
 
+## Text snippets and clipboard
 
-Ist beim Tippen auf „JSON öffnen“ das Feld `Box` leer,
-öffnet die App den Android-Dateidialog wie bei der Bildauswahl, möglichst direkt
-im `Daten`-Ordner (`boxes`) des aktiven Profils. Ausgewählt werden können
-JSON-Dateien innerhalb dieses Ordners und seiner Unterordner. Die ausgewählte Datei
-wird am ursprünglichen Speicherort geöffnet und weiterbearbeitet.
-
-
-## Textbausteine und Zwischenablage
-
-Im gemeinsamen Setup lassen sich beliebig viele benannte Textbausteine ergänzen:
+Any number of named text snippets can be added to the shared setup:
 
 ```ini
 [TextSnippets]
@@ -394,19 +435,19 @@ Zähle die sichtbaren Bauteile.
 Gib eine Tabelle aus."
 ```
 
-„Textbaustein auswählen“ öffnet eine scrollbare Auswahl mit Namen und Inhalt.
-Ein Tipp kopiert nur den Inhalt (ohne die äußeren Anführungszeichen) in die
-Android-Zwischenablage. Im gewünschten Textfeld lange drücken und „Einfügen“
-wählen. Die Auswahl liest die aktuelle Konfiguration; Änderungen im Setup gelten
-sofort und für alle App-Profile. Jeder Eintrag beginnt auf einer eigenen Zeile und
-hat einen eindeutigen Namen. Ein Wert in doppelten Anführungszeichen darf mehrere
-Zeilen umfassen. Das schließende Anführungszeichen steht am Ende der letzten
-Textzeile oder auf einer eigenen Zeile (dann endet der Wert mit einem Zeilenumbruch).
-Zeilenumbrüche, Leerzeilen, Gleichheitszeichen und Leerzeichen innerhalb des Werts
-bleiben erhalten. Auch Zeilen mit `#`, `;` oder `[Abschnitt]` gehören darin zum Text.
-Anführungszeichen im Text müssen paarweise auf derselben Zeile stehen, etwa
-`Bei Unsicherheit schreibe "?"`. Backslashes bleiben wörtlich erhalten; `\n`
-wird nicht umgewandelt. Ein fehlendes Schlusszeichen wird als Setup-Fehler gemeldet.
+“Select text snippet” opens a scrollable list of names and contents.
+Tapping an entry copies only its contents (without the enclosing quotation marks)
+to the Android clipboard. Long-press the desired text field and choose “Paste”.
+The picker reads the current configuration; setup changes take effect immediately
+for all app profiles. Each entry starts on its own line and has a unique name.
+A double-quoted value can span multiple lines. The closing quotation mark appears
+at the end of the final text line or on its own line (in which case the value
+ends with a newline). Line breaks, blank lines, equals signs, and spaces within
+the value are preserved. Lines containing `#`, `;`, or `[Section]` are also part
+of the text within a quoted value. Quotation marks inside the text must be paired
+on the same line, for example `If uncertain, write "?"`. Backslashes are preserved
+literally; `\n` is not converted. A missing closing quotation mark is reported
+as a setup error.
 
-Bei vorhandenen Installationen wird ein fehlender Abschnitt automatisch mit den
-beiden Beispielen ergänzt. Ein vorhandener, auch leerer Abschnitt bleibt erhalten.
+For existing installations, a missing section is automatically added with the
+two examples. An existing section, even if empty, is preserved.
