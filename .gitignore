@@ -8,3 +8,7 @@ local.properties
 app/src/main/assets/z
 app/src/main/assets/known_hosts
 /signing-keys/
+
+# Ubuntu desktop runtime files
+__pycache__/
+*.pyc

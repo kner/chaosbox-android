@@ -1,4 +1,16 @@
-# ChaosBox — Android app
+# ChaosBox — Android and Ubuntu apps
+
+## Ubuntu 24.04 desktop app
+
+The native desktop version lives in [`desktop/`](desktop/README.md). Start it with
+`./run-desktop.sh`, or run `./install-desktop.sh` to install **ChaosBox Desktop**
+in the Ubuntu application menu. It uses `~/ChaosBox/JPG`, `~/ChaosBox/boxes`,
+and `~/ChaosBox/Setup/setup.ini` by default.
+
+The desktop version includes batch media editing, JPG and MP4 metadata, JSON
+records, profiles, automatic category additions, regex search, text snippets,
+full-screen image zoom and manual SSH upload. See the desktop documentation for
+dependencies, shortcuts and configuration. The sections below describe Android.
 
 ## English interface and form actions
 
