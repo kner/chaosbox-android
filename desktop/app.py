@@ -708,7 +708,9 @@ class App:
         dialog.title("Open JPG / MP4")
         dialog.geometry("1000x700")
         dialog.minsize(640, 400)
-        dialog.transient(self.root)
+        # Keep normal window decorations: transient dialogs can lose their
+        # maximize button under the Linux window manager.
+        dialog.resizable(True, True)
         dialog.grab_set()
         navigation = ttk.Frame(dialog, padding=12)
         navigation.pack(fill="x")

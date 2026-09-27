@@ -87,6 +87,7 @@ profile then uses `/tmp/chaosbox-demo/ChaosBox/JPG`.
 ## Editing
 
 - **Open JPG / MP4** shows a scrollable thumbnail grid with **1–10 columns**.
+  The window can be maximized and restored using its title-bar controls.
   Only files directly in the current folder are shown. **Choose folder …** changes
   folders. The last selected folder is remembered per profile across restarts,
   including folders used through **Other files …**.
