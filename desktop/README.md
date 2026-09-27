@@ -87,14 +87,26 @@ profile then uses `/tmp/chaosbox-demo/ChaosBox/JPG`.
 ## Editing
 
 - **Open JPG / MP4** shows a scrollable thumbnail grid with **1–10 columns**.
+  Only files directly in the current folder are shown. **Choose folder …** changes
+  folders. The last selected folder is remembered per profile across restarts,
+  including folders used through **Other files …**.
+  Double-clicking a folder in the folder picker selects it and opens its images
+  immediately. Enter a folder path and press Enter to navigate directly.
   Click tiles to toggle multiple selections, Shift-click to select a range, or
   use **Select all** / **Clear**. The selection survives column changes.
   Previews load in the background; unavailable previews remain selectable.
   Thumbnail size follows the column width while preserving image proportions.
+  **Show UserComment** displays **box | category | comment** below each thumbnail,
+  limited to 60 characters in total. Comments load in the background when enabled.
   **Other files …**
   also imports PNG files. The first file supplies initial values and preview.
   **Save** writes the same form values to every selected file.
-- Existing profile media is updated in place. Imports receive a separate `_cb`
+  Local saves refresh only the search index entries of the saved files.
+  Startup and searches still rebuild the full index to discover external changes;
+  a missing or damaged desktop index cache also triggers a full rebuild.
+- Saved media goes into the category folder, or **unassigned** when no category
+  is specified. Existing profile media moves there when its category changes;
+  media already in the correct folder is updated in place. Imports receive a separate `_cb`
   filename; name collisions get numbered suffixes. PNG files become JPG with a
   white background. Images exceeding `[ImageSize] LIMIT` are resized. Smaller
   JPGs retain their encoded image data; MP4 video/audio is not re-encoded.

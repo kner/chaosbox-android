@@ -1,15 +1,114 @@
 """Queue recovery tests that run without a graphical display."""
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 import queue
 import io
 import sys
+import json
+import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app import App, copy_image_clipboard
+from app import App, MediaGrid, MediaFolderDialog, copy_image_clipboard, user_comment_preview
+import core
+
+
+class UserCommentTests(unittest.TestCase):
+    def test_caption_shows_fields_in_order_and_limits_unicode_to_60_characters(self):
+        raw = json.dumps({"box": "A11", "category": "Elektronik", "comment": "Grüße 🎬 " + "ä" * 70,
+                          "device": "Not displayed"}, ensure_ascii=False)
+        with patch("core.run_tool", return_value=raw.encode("utf-8")):
+            caption = user_comment_preview(Path("photo.jpg"))
+            self.assertEqual(caption, ("A11 | Elektronik | Grüße 🎬 " + "ä" * 70)[:60])
+            self.assertEqual(len(caption), 60)
+
+    def test_empty_and_multiline_comments(self):
+        for raw, expected in (("", ""), ("First\nsecond\tthird", " |  | First second third"),
+                              ('{"box":"A11","category":"Tools"}', "A11 | Tools | "),
+                              ('{"box":"A11","comment":"Note"}', "A11 |  | Note")):
+            with self.subTest(raw=raw), patch("core.read_user_comment", return_value=raw):
+                self.assertEqual(user_comment_preview(Path("photo.jpg")), expected)
+
+    def test_failed_comment_load_keeps_selection_and_polling(self):
+        grid = MediaGrid.__new__(MediaGrid)
+        grid.comment_future = Future()
+        grid.comment_future.set_exception(ValueError("Unreadable metadata"))
+        grid.comment_loading = 0
+        grid.comments = {}
+        grid.show_user_comment = True
+        grid.future = None
+        grid.visible = []
+        grid.selected = {0}
+        grid.redraw = Mock()
+        grid.after = Mock()
+        grid.poll()
+        self.assertEqual(grid.comments, {0: ""})
+        self.assertEqual(grid.selected, {0})
+        grid.after.assert_called_once_with(60, grid.poll)
+
+
+class MediaFolderTests(unittest.TestCase):
+    def test_double_click_confirms_clicked_folder(self):
+        dialog = MediaFolderDialog.__new__(MediaFolderDialog)
+        dialog.listing = Mock()
+        dialog.listing.nearest.return_value = 1
+        dialog.listing.bbox.return_value = (0, 20, 100, 20)
+        dialog.directories = [Path("first"), Path("second")]
+        dialog.listing.curselection.return_value = (1,)
+        dialog.ok = Mock(side_effect=dialog.apply)
+        self.assertEqual(dialog.double_click(SimpleNamespace(y=25)), "break")
+        dialog.listing.selection_clear.assert_called_once_with(0, "end")
+        dialog.listing.selection_set.assert_called_once_with(1)
+        dialog.ok.assert_called_once()
+        self.assertEqual(dialog.result, Path("second"))
+
+    def test_double_click_on_empty_space_does_not_confirm(self):
+        dialog = MediaFolderDialog.__new__(MediaFolderDialog)
+        dialog.listing = Mock()
+        dialog.listing.nearest.return_value = 0
+        dialog.ok = Mock()
+        for bounds in (None, (0, 0, 100, 20)):
+            dialog.listing.bbox.return_value = bounds
+            self.assertEqual(dialog.double_click(SimpleNamespace(y=80)), "break")
+        dialog.ok.assert_not_called()
+
+    def test_folder_selection_is_shallow_and_persisted_per_profile(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            folder = root / "chosen"
+            nested = folder / "nested"
+            nested.mkdir(parents=True)
+            direct = folder / "photo.JPG"
+            direct.touch()
+            hidden = nested / "hidden.jpg"
+            hidden.touch()
+            app = App.__new__(App)
+            app.profile = SimpleNamespace(id="first", images=root)
+            app.state_file = root / "state.json"
+            app.media_folders = {}
+            app.error = Mock()
+            app.remember_media_folder(folder)
+            app.media_folders = json.loads(app.state_file.read_text())["media_folders"]
+            app.busy = app.search_mode = False
+            app.media_dialog = Mock()
+            app.task = lambda work, done: done(work())
+            app.choose_media()
+            app.media_dialog.assert_called_once_with([direct], folder)
+            self.assertEqual(core.files(folder, core.MEDIA), [hidden, direct])
+            app.profile = SimpleNamespace(id="second", images=root)
+            self.assertEqual(app.media_folder(), root)
+            app.save_state()
+            self.assertEqual(json.loads(app.state_file.read_text())["media_folders"]["first"], str(folder))
+            app.profile = SimpleNamespace(id="first", images=root)
+            hidden.unlink()
+            nested.rmdir()
+            direct.unlink()
+            folder.rmdir()
+            self.assertEqual(app.media_folder(), root)
+            app.error.assert_not_called()
 
 
 class ClipboardTests(unittest.TestCase):

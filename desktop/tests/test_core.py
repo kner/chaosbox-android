@@ -100,6 +100,44 @@ class DesktopTests(unittest.TestCase):
             core.save_box(path, self.record, 5)
         self.assertEqual(path.read_bytes(), before)
 
+    def test_saved_media_moves_with_category_and_cleared_category(self):
+        source = self.picture("ChaosBox/JPG/old/photo.jpg")
+        core.build_index(self.profile)
+        moved = core.save_media(source, self.profile, self.record, 3000)
+        self.assertEqual(moved, self.profile.images / "elektronik" / source.name)
+        self.assertFalse(source.exists())
+        self.assertEqual(core.read_metadata(moved)["category"], "Elektronik")
+        entries = core.update_index(self.profile, [source, moved])
+        self.assertEqual([entry.source for entry in entries], [moved])
+        cleared = core.save_media(moved, self.profile, dict(self.record, category=""), 3000)
+        self.assertEqual(cleared, self.profile.images / "unassigned" / source.name)
+        self.assertFalse(moved.exists())
+        self.assertEqual(core.read_metadata(cleared)["category"], "")
+        self.assertEqual(core.save_media(cleared, self.profile, dict(self.record, category=""), 3000), cleared)
+
+    def test_category_move_preserves_colliding_file(self):
+        source = self.picture("ChaosBox/JPG/old/photo.jpg")
+        existing = self.picture("ChaosBox/JPG/elektronik/photo.jpg")
+        before = existing.read_bytes()
+        moved = core.save_media(source, self.profile, self.record, 3000)
+        self.assertEqual(moved.name, "photo_1.jpg")
+        self.assertFalse(source.exists())
+        self.assertEqual(existing.read_bytes(), before)
+
+    def test_category_move_rolls_back_if_source_cannot_be_removed(self):
+        source = self.picture("ChaosBox/JPG/old/photo.jpg")
+        before = source.read_bytes()
+        unlink = Path.unlink
+        def fail_source(path, *args, **kwargs):
+            if path == source:
+                raise PermissionError("Source cannot be removed")
+            return unlink(path, *args, **kwargs)
+        with patch.object(Path, "unlink", fail_source):
+            with self.assertRaises(PermissionError):
+                core.save_media(source, self.profile, self.record, 3000)
+        self.assertEqual(source.read_bytes(), before)
+        self.assertEqual(core.files(self.profile.images, core.MEDIA), [source])
+
     def test_partial_batch_retry_and_search(self):
         source = self.picture()
         bad = self.root / "broken.jpg"
@@ -124,6 +162,60 @@ class DesktopTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             core.build_index(self.profile)
         self.assertEqual(index.read_bytes(), before)
+
+    def test_incremental_index_only_reads_changed_sources(self):
+        first = self.picture("ChaosBox/JPG/one/same.jpg")
+        second = self.picture("ChaosBox/JPG/two/same.jpg")
+        box = self.profile.data / "a11.json"
+        box.write_text('[{"device":"first"},{"device":"second"}]')
+        with patch("core.read_metadata", return_value=core.normalized(self.record)):
+            core.build_index(self.profile)
+        imported = self.picture("ChaosBox/JPG/new/import_cb.jpg")
+        with patch("core.files", side_effect=AssertionError("Unexpected directory scan")), \
+             patch("core.load_box", side_effect=AssertionError("Unchanged JSON read")), \
+             patch("core.read_metadata", return_value=core.normalized(dict(self.record, comment="changed"))) as read:
+            entries = core.update_index(self.profile, [first, imported])
+            self.assertEqual({call.args[0] for call in read.call_args_list}, {first, imported})
+        by_path = {entry.source: entry for entry in entries if entry.media}
+        self.assertEqual(by_path[first].data["comment"], "changed")
+        self.assertEqual(by_path[second].data["comment"], self.record["comment"])
+        self.assertIn(imported, by_path)
+        box.write_text('[{"device":"replacement"}]')
+        with patch("core.read_metadata", side_effect=AssertionError("Unchanged image read")), \
+             patch("core.load_box", wraps=core.load_box) as read_box:
+            entries = core.update_index(self.profile, [box])
+            read_box.assert_called_once_with(box)
+        records = [entry for entry in entries if entry.source == box]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].data["device"], "replacement")
+        self.assertEqual(records[0].index, 0)
+        first.unlink()
+        entries = core.update_index(self.profile, [first])
+        self.assertNotIn(first, [entry.source for entry in entries])
+        self.assertEqual(len(json.loads((self.profile.index / "records.json").read_text())), len(entries))
+
+    def test_incremental_index_recovers_missing_or_broken_cache(self):
+        path = self.picture("ChaosBox/JPG/sample.jpg")
+        for content in (None, "invalid", '{"version":99,"entries":[]}', '{"version":1,"entries":[{}]}'):
+            cache = self.profile.index / "desktop-index.json"
+            if content is not None:
+                core.atomic_write(cache, content)
+            with patch("core.read_metadata", return_value=core.normalized(self.record)) as read:
+                entries = core.update_index(self.profile, [path])
+                read.assert_called_once_with(path)
+                self.assertEqual(len(entries), 1)
+
+    def test_failed_incremental_read_preserves_index_and_invalidates_cache(self):
+        path = self.picture("ChaosBox/JPG/sample.jpg")
+        with patch("core.read_metadata", return_value=core.normalized(self.record)):
+            core.build_index(self.profile)
+        index = self.profile.index / "records.json"
+        before = index.read_bytes()
+        with patch("core.read_metadata", side_effect=ValueError("unreadable")):
+            with self.assertRaises(ValueError):
+                core.update_index(self.profile, [path])
+        self.assertEqual(index.read_bytes(), before)
+        self.assertFalse((self.profile.index / "desktop-index.json").exists())
 
     def test_mp4_metadata_preserves_streams(self):
         video = self.root / "source.mp4"

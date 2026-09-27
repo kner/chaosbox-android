@@ -33,6 +33,17 @@ def copy_image_clipboard(image):
                    stderr=subprocess.DEVNULL, check=True, timeout=15)
 
 
+USER_COMMENT_PREVIEW_LIMIT = 60
+
+
+def user_comment_preview(path):
+    # Keep captions on a predictable number of lines without changing metadata.
+    metadata = core.read_metadata(path)
+    fields = [" ".join(str(metadata.get(key) or "").split())
+              for key in ("box", "category", "comment")]
+    return " | ".join(fields)[:USER_COMMENT_PREVIEW_LIMIT] if any(fields) else ""
+
+
 class ImageCanvas(tk.Canvas):
     def __init__(self, parent, zoomable=False, **kwargs):
         super().__init__(parent, background="#101820", highlightthickness=0, **kwargs)
@@ -142,6 +153,74 @@ class ImageCanvas(tk.Canvas):
             self.create_text(18, 18, anchor="nw", text=f"{self.zoom:.1f}×", fill="white", font=("Sans", 12, "bold"))
 
 
+class MediaFolderDialog(simpledialog.Dialog):
+    """Folder picker where a double-click confirms the folder immediately."""
+
+    def __init__(self, parent, folder):
+        self.folder = Path(folder)
+        self.directories = []
+        super().__init__(parent, title="Select media folder")
+
+    def body(self, master):
+        self.location = tk.StringVar(value=str(self.folder))
+        navigation = ttk.Frame(master)
+        navigation.pack(fill="x")
+        ttk.Button(navigation, text="Up", command=lambda: self.browse(self.folder.parent)).pack(side="left")
+        entry = ttk.Entry(navigation, textvariable=self.location, width=65)
+        entry.pack(side="left", fill="x", expand=True, padx=6)
+        def enter_path(event):
+            self.browse(Path(self.location.get()).expanduser())
+            return "break"
+        entry.bind("<Return>", enter_path)
+        ttk.Label(master, text="Double-click a folder to select it and open its images.").pack(anchor="w", pady=8)
+        frame = ttk.Frame(master)
+        frame.pack(fill="both", expand=True)
+        self.listing = tk.Listbox(frame, height=18, exportselection=False)
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=self.listing.yview)
+        self.listing.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        self.listing.pack(side="left", fill="both", expand=True)
+        self.listing.bind("<Double-Button-1>", self.double_click)
+        self.browse(self.folder)
+        return self.listing
+
+    def browse(self, folder):
+        try:
+            folder = folder.resolve()
+            directories = sorted((path for path in folder.iterdir() if path.is_dir()),
+                                 key=lambda path: path.name.casefold())
+        except OSError as error:
+            messagebox.showerror("Select media folder", str(error), parent=self)
+            return
+        self.folder, self.directories = folder, directories
+        self.location.set(str(folder))
+        self.listing.delete(0, "end")
+        for path in directories:
+            self.listing.insert("end", path.name)
+
+    def selected_folder(self):
+        selected = self.listing.curselection()
+        return self.directories[selected[0]] if selected else self.folder
+
+    def double_click(self, event):
+        index = self.listing.nearest(event.y)
+        bounds = self.listing.bbox(index)
+        if bounds and bounds[1] <= event.y < bounds[1] + bounds[3]:
+            self.listing.selection_clear(0, "end")
+            self.listing.selection_set(index)
+            self.ok()
+        return "break"
+
+    def validate(self):
+        if not self.selected_folder().is_dir():
+            messagebox.showerror("Select media folder", "This folder is no longer available.", parent=self)
+            return False
+        return True
+
+    def apply(self):
+        self.result = self.selected_folder()
+
+
 class MediaGrid(ttk.Frame):
     """Scrollable thumbnail chooser; only visible tiles are rendered and loaded."""
 
@@ -153,6 +232,9 @@ class MediaGrid(ttk.Frame):
         self.columns = 4
         self.cache = OrderedDict()
         self.cache_sizes = {}
+        self.show_user_comment = False
+        self.comments = {}
+        self.comment_future = None
         self.photos = []
         self.worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="thumbnails")
         self.future = None
@@ -173,6 +255,10 @@ class MediaGrid(ttk.Frame):
 
     def set_columns(self, value):
         self.columns = max(1, min(10, int(value)))
+        self.redraw()
+
+    def set_show_user_comment(self, value):
+        self.show_user_comment = bool(value)
         self.redraw()
 
     def scroll(self, *args):
@@ -217,6 +303,9 @@ class MediaGrid(ttk.Frame):
         self.cell_width = width / self.columns
         self.thumb_size = max(24, int(self.cell_width) - 16)
         self.cell_height = self.thumb_size + 66
+        if self.show_user_comment:
+            chars_per_line = max(1, int((self.cell_width - 14) / 10))
+            self.cell_height += ((USER_COMMENT_PREVIEW_LIMIT + chars_per_line - 1) // chars_per_line) * 18 + 8
         rows = (len(self.paths) + self.columns - 1) // self.columns
         canvas.configure(scrollregion=(0, 0, width, rows * self.cell_height),
                          yscrollincrement=max(20, self.cell_height // 3))
@@ -259,11 +348,24 @@ class MediaGrid(ttk.Frame):
             canvas.create_text(x + self.cell_width / 2, y + self.thumb_size + 12,
                                anchor="n", text=label, width=max(12, self.cell_width - 14),
                                font=("Sans", 9), fill="#0f172a")
+            if self.show_user_comment:
+                canvas.create_text(x + self.cell_width / 2, y + self.thumb_size + 62,
+                                   anchor="n", text=self.comments.get(index, "Loading…"),
+                                   width=max(12, self.cell_width - 14),
+                                   font=("Sans", 9), fill="#475569")
             canvas.create_text(x + 9, y + 9, anchor="nw", text="☑" if selected else "☐",
                                fill="#1d4ed8", font=("Sans", 14, "bold"))
 
     def poll(self):
         self.pending = None
+        if self.comment_future is not None and self.comment_future.done():
+            try:
+                self.comments[self.comment_loading] = self.comment_future.result()
+            except Exception:
+                self.comments[self.comment_loading] = ""
+            self.comment_future = None
+            if self.show_user_comment:
+                self.redraw()
         if self.future is not None and self.future.done():
             index, future = self.loading, self.future
             self.future = None
@@ -289,6 +391,12 @@ class MediaGrid(ttk.Frame):
                     self.future = self.worker.submit(core.load_preview, self.paths[index],
                                                      (self.thumb_size, self.thumb_size))
                     break
+        if self.show_user_comment and self.comment_future is None:
+            for index in getattr(self, "visible", []):
+                if index not in self.comments:
+                    self.comment_loading = index
+                    self.comment_future = self.worker.submit(user_comment_preview, self.paths[index])
+                    break
         self.pending = self.after(60, self.poll)
 
     def destroy(self):
@@ -302,8 +410,10 @@ class MediaGrid(ttk.Frame):
         self.photos.clear()
         self.cache.clear()
         self.cache_sizes.clear()
+        self.comments.clear()
         self.worker.shutdown(wait=False, cancel_futures=True)
         self.future = None
+        self.comment_future = None
         super().destroy()
         # Canvas.master points back to this frame even after Tk destruction.
         self.canvas = None
@@ -335,6 +445,7 @@ class App:
             state = json.loads(self.state_file.read_text())
         except (OSError, ValueError):
             state = {}
+        self.media_folders = state.get("media_folders", {})
         self.profile = settings.profile(state.get("profile", settings.default))
         style = ttk.Style(root)
         style.theme_use("clam")
@@ -566,24 +677,50 @@ class App:
         self.profile = self.settings.profile(self.profile_var.get())
         self.last_search = None
         self.clear()
+        self.save_state()
+        self.initialize()
+
+    def save_state(self):
         try:
-            core.atomic_write(self.state_file, json.dumps({"profile": self.profile.id}))
+            core.atomic_write(self.state_file, json.dumps({
+                "profile": self.profile.id, "media_folders": self.media_folders}))
         except OSError as error:
             self.error(error)
-        self.initialize()
+
+    def media_folder(self):
+        folder = Path(self.media_folders.get(self.profile.id, str(self.profile.images)))
+        return folder if folder.is_dir() else self.profile.images
+
+    def remember_media_folder(self, folder):
+        self.media_folders[self.profile.id] = str(Path(folder).resolve())
+        self.save_state()
 
     def choose_media(self):
         if self.busy or self.search_mode:
             return
-        self.task(lambda: core.files(self.profile.images, core.MEDIA), self.media_dialog)
+        folder = self.media_folder()
+        self.task(lambda: core.files(folder, core.MEDIA, recursive=False),
+                  lambda paths: self.media_dialog(paths, folder))
 
-    def media_dialog(self, paths):
+    def media_dialog(self, paths, folder=None):
+        folder = folder or self.media_folder()
         dialog = tk.Toplevel(self.root)
-        dialog.title("Open JPG / MP4 — all subfolders")
+        dialog.title("Open JPG / MP4")
         dialog.geometry("1000x700")
         dialog.minsize(640, 400)
         dialog.transient(self.root)
         dialog.grab_set()
+        navigation = ttk.Frame(dialog, padding=12)
+        navigation.pack(fill="x")
+        def change_folder():
+            chosen = MediaFolderDialog(dialog, folder).result
+            dialog.grab_set()
+            if chosen:
+                self.remember_media_folder(chosen)
+                dialog.destroy()
+                self.choose_media()
+        ttk.Button(navigation, text="Choose folder …", command=change_folder).pack(side="left")
+        ttk.Label(navigation, text=str(folder), wraplength=750).pack(side="left", padx=12)
         toolbar = ttk.Frame(dialog, padding=12)
         toolbar.pack(fill="x")
         ttk.Label(toolbar, text="Click to select multiple files · Shift-click selects a range").pack(side="left")
@@ -596,8 +733,15 @@ class App:
         def changed():
             count.set(f"{len(grid.selected)} / {len(paths)} selected")
             open_button.configure(state="normal" if grid.selected else "disabled")
-        grid = MediaGrid(dialog, paths, self.profile.images, changed)
+        grid = MediaGrid(dialog, paths, folder, changed)
         grid.pack(fill="both", expand=True, padx=12)
+        show_comment = tk.BooleanVar(value=getattr(self, "media_show_user_comment", False))
+        def change_comment():
+            self.media_show_user_comment = show_comment.get()
+            grid.set_show_user_comment(self.media_show_user_comment)
+        ttk.Checkbutton(toolbar, text="Show UserComment", variable=show_comment,
+                        command=change_comment).pack(side="right", padx=8)
+        change_comment()
         def change_columns(event=None):
             self.media_columns = int(columns.get())
             grid.set_columns(self.media_columns)
@@ -606,13 +750,15 @@ class App:
         def open_selected(event=None):
             selected = grid.selection()
             if selected:
+                self.remember_media_folder(selected[0].parent)
                 dialog.destroy()
                 self.open_media(selected)
         def external():
             dialog.destroy()
-            chosen = filedialog.askopenfilenames(parent=self.root, initialdir=self.profile.images,
+            chosen = filedialog.askopenfilenames(parent=self.root, initialdir=folder,
                 title="Select JPG, PNG or MP4 files", filetypes=[("Images and videos", "*.jpg *.jpeg *.JPG *.JPEG *.png *.PNG *.mp4 *.MP4"), ("All files", "*")])
             if chosen:
+                self.remember_media_folder(Path(chosen[0]).parent)
                 self.open_media([Path(name) for name in chosen])
         buttons = ttk.Frame(dialog, padding=12)
         buttons.pack(fill="x")
@@ -763,14 +909,25 @@ class App:
         def work():
             self.settings.remember_category(profile, record["category"])
             if media:
-                saved = core.save_batch(media, profile, record, self.settings.limit, self.log)
+                try:
+                    saved = core.save_batch(media, profile, record, self.settings.limit, self.log)
+                except core.BatchError as error:
+                    if error.completed:
+                        try:
+                            previous = [p for p in media[:error.completed]
+                                        if core.within(p, profile.images) and p.suffix.lower() in core.MEDIA]
+                            core.update_index(profile, previous + error.selection[:error.completed], self.log)
+                        except Exception as index_error:
+                            self.log(f"Search index update failed: {index_error}")
+                    raise
                 result = ("media", saved, self.preview_result(saved[0]))
             else:
                 records, index = core.save_box(path, record, selected)
                 result = ("json", records, index)
             warning = ""
             try:
-                core.build_index(profile, self.log)
+                previous = [p for p in media if core.within(p, profile.images) and p.suffix.lower() in core.MEDIA]
+                core.update_index(profile, previous + saved if media else [path], self.log)
             except Exception as error:
                 warning = f"Saved locally, but the search index could not be updated: {error}"
             return result, warning

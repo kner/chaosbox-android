@@ -264,13 +264,14 @@ class Settings:
         self.save_text("\n".join(lines).rstrip() + "\n")
 
 
-def files(folder, extensions):
+def files(folder, extensions, recursive=True):
     folder = Path(folder)
     if not folder.exists():
         return []
     result = []
     for base, directories, names in os.walk(folder, followlinks=False):
-        directories[:] = sorted(d for d in directories if not (Path(base) / d).is_symlink())
+        directories[:] = (sorted(d for d in directories if not (Path(base) / d).is_symlink())
+                          if recursive else [])
         for name in sorted(names):
             path = Path(base) / name
             if path.suffix.lower() in extensions and not path.is_symlink() and path.is_file():
@@ -327,7 +328,8 @@ def run_tool(*arguments, timeout=300):
     return result.stdout
 
 
-def read_metadata(path):
+def read_user_comment(path):
+    """Read the original media comment without interpreting its JSON content."""
     path = Path(path).resolve()
     if path.suffix.lower() == ".mp4":
         tags = json.loads(run_tool("exiftool", "-j", "-G1", "-ItemList:Comment", "-Keys:Comment", "-UserData:Comment", str(path)))
@@ -335,7 +337,11 @@ def read_metadata(path):
         raw = next((item[key] for key in ("ItemList:Comment", "Keys:Comment", "UserData:Comment") if key in item), "")
     else:
         raw = run_tool("exiftool", "-s3", "-EXIF:UserComment", str(path)).decode("utf-8").rstrip("\r\n")
-    return parse_metadata(raw)
+    return raw
+
+
+def read_metadata(path):
+    return parse_metadata(read_user_comment(path))
 
 
 def validate_record(values):
@@ -374,12 +380,13 @@ def save_media(source, profile, metadata, limit):
     video = source.suffix.lower() == ".mp4"
     original = source.resolve()
     editing = within(original, profile.images) and source.suffix.lower() in MEDIA
-    destination = original.parent if editing else profile.images / category_folder(metadata.get("category", ""))
-    if not editing and (destination.is_symlink() or destination.resolve().parent != profile.images.resolve()):
+    destination = profile.images / category_folder(metadata.get("category", ""))
+    if destination.is_symlink() or destination.resolve().parent != profile.images.resolve():
         raise ValueError("Invalid category folder.")
     destination.mkdir(parents=True, exist_ok=True)
     extension = ".mp4" if video else ".jpg"
-    target, reserved = original if editing else None, False
+    target = original if editing and original.parent == destination.resolve() else None
+    reserved = False
     fd, temp_name = tempfile.mkstemp(prefix=".save-", suffix=extension, dir=destination)
     os.close(fd)
     temporary = Path(temp_name)
@@ -423,9 +430,9 @@ def save_media(source, profile, metadata, limit):
         if any(str(result.get(field, "")) != str(metadata.get(field, "")) for field in FIELDS):
             raise ValueError("Metadata verification failed; the source file was not changed.")
         if target is None:
-            target = reserve_output(destination, original.stem + "_cb" + extension)
+            target = reserve_output(destination, original.name if editing else original.stem + "_cb" + extension)
             reserved = True
-        old_time = target.stat().st_mtime
+        old_time = max(target.stat().st_mtime, original.stat().st_mtime) if editing else target.stat().st_mtime
         modified = max(time.time(), int(old_time) + 1)
         os.utime(temporary, (modified, modified))
         if editing:
@@ -433,6 +440,10 @@ def save_media(source, profile, metadata, limit):
         with temporary.open("rb") as saved:
             os.fsync(saved.fileno())
         os.replace(temporary, target)
+        if editing and target != original:
+            # Remove the source only after the new file has been verified and
+            # installed. If removal fails, the reserved target is rolled back.
+            original.unlink()
         reserved = False
         return target
     finally:
@@ -513,24 +524,70 @@ def json_files(profile):
     return sorted(set(files(profile.data, {".json"}) + files(profile.legacy_data, {".json"})))
 
 
+def index_entries(path, media):
+    if media:
+        return [Entry(path, read_metadata(path), True)]
+    entries = []
+    for index, raw in enumerate(load_box(path)):
+        data = normalized(raw)
+        data["box"] = data["box"] or path.stem
+        entries.append(Entry(path, data, False, index))
+    return entries
+
+
+def write_index(profile, entries):
+    (profile.index / "desktop-index.json").unlink(missing_ok=True)
+    serialized = [dict(entry.data, path=entry.source.name) for entry in entries]
+    atomic_write(profile.index / "records.json", json.dumps(serialized, ensure_ascii=False, indent=2) + "\n")
+    # Keep the shared records.json format unchanged. The desktop cache needs
+    # full paths to distinguish equal filenames in different category folders.
+    cache = {"version": 1, "entries": [dict(source=str(entry.source), data=entry.data,
+             media=entry.media, index=entry.index) for entry in entries]}
+    atomic_write(profile.index / "desktop-index.json", json.dumps(cache, ensure_ascii=False) + "\n")
+
+
 def build_index(profile, progress=lambda _: None):
     entries = []
     for path in files(profile.images, MEDIA):
         progress(f"Reading {path.name}")
         try:
-            entries.append(Entry(path, read_metadata(path), True))
+            entries.extend(index_entries(path, True))
         except Exception as error:
             raise ValueError(f"{path}: {error}") from error
     for path in json_files(profile):
         try:
-            for index, raw in enumerate(load_box(path)):
-                data = normalized(raw)
-                data["box"] = data["box"] or path.stem
-                entries.append(Entry(path, data, False, index))
+            entries.extend(index_entries(path, False))
         except Exception as error:
             raise ValueError(f"{path}: {error}") from error
-    serialized = [dict(entry.data, path=entry.source.name) for entry in entries]
-    atomic_write(profile.index / "records.json", json.dumps(serialized, ensure_ascii=False, indent=2) + "\n")
+    write_index(profile, entries)
+    return entries
+
+
+def update_index(profile, changed, progress=lambda _: None):
+    """Replace only changed sources; rebuild if no usable baseline exists."""
+    try:
+        cache = json.loads((profile.index / "desktop-index.json").read_text(encoding="utf-8"))
+        if cache["version"] != 1 or not isinstance(cache["entries"], list):
+            raise ValueError("Unsupported index cache")
+        entries = []
+        for item in cache["entries"]:
+            if (not isinstance(item["source"], str) or not Path(item["source"]).is_absolute()
+                    or not isinstance(item["data"], dict) or not isinstance(item["media"], bool)
+                    or (item["index"] is not None and type(item["index"]) is not int)):
+                raise ValueError("Invalid index entry")
+            entries.append(Entry(Path(item["source"]), item["data"], item["media"], item["index"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        return build_index(profile, progress)
+    paths = set(map(Path, changed))
+    # A failed refresh must not leave a stale baseline for the next save.
+    (profile.index / "desktop-index.json").unlink(missing_ok=True)
+    entries = [entry for entry in entries if entry.source not in paths]
+    for path in sorted(paths):
+        progress(f"Updating index: {path.name}")
+        if path.exists():
+            entries.extend(index_entries(path, path.suffix.lower() in MEDIA))
+    entries.sort(key=lambda entry: (not entry.media, entry.source, entry.index or 0))
+    write_index(profile, entries)
     return entries
 
 
