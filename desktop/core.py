@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 import errno
 import hashlib
+import io
+import math
 import json
 import os
 from pathlib import Path
@@ -18,7 +20,7 @@ import threading
 import time
 import uuid
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageDraw, ImageFont, ImageColor
 
 FIELDS = ("box", "anzahl", "device", "alias", "category", "comment", "package")
 LABELS = ("Box", "Quantity", "Device", "Alias", "Category", "Comment", "Package")
@@ -151,6 +153,7 @@ class Settings:
         limit = int(lookup.get("imagesize", {}).get("limit", "3000"))
         if not 1 <= limit <= 20000:
             raise ValueError("ImageSize LIMIT must be between 1 and 20000.")
+        poster_settings(text)  # Validate before persisting setup.
         profiles = []
         legacy_categories = []
         active = False
@@ -218,7 +221,9 @@ class Settings:
         return profiles, default, limit, snippets, ssh
 
     def reload(self):
-        self.profiles, self.default, self.limit, self.snippets, self.ssh = self.parse(self.path.read_text(encoding="utf-8-sig"))
+        text = self.path.read_text(encoding="utf-8-sig")
+        self.profiles, self.default, self.limit, self.snippets, self.ssh = self.parse(text)
+        self.poster = poster_settings(text)
 
     def save_text(self, text):
         self.parse(text)
@@ -262,6 +267,268 @@ class Settings:
                           f"Daten={current.data}", "Felder=" + ",".join(current.labels),
                           "Kategorie=" + ", ".join(current.categories + additions)])
         self.save_text("\n".join(lines).rstrip() + "\n")
+
+
+@dataclass(frozen=True)
+class PosterSettings:
+    limit: int = 6000
+    height: float = 200
+    width: float = 100
+    cols: int = 3
+    rows: int = 3
+    fixed: bool = True
+    margin_left: float = 15
+    margin_right: float = 10
+    margin_top: float = 10
+    margin_bottom: float = 15
+    frames: str = "eeee"
+    background_color: str = "9bb195"
+    image_background_color: str = "FFFFFF"
+    image_padding: float = 2
+
+
+def poster_settings(text):
+    groups = {key.casefold(): value for key, value in sections(text).items()}
+    values = dict(groups.get("imagesize", {}))
+    values.update(groups.get("poster", {}))
+    size = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s*[x×]\s*([0-9]+(?:\.[0-9]+)?)\s*",
+                        values.get("poster-size", "200x100"))
+    if not size:
+        raise ValueError("POSTER-SIZE must be height x width in millimeters, e.g. 200x100.")
+    height, width = map(float, size.groups())
+    limit = int(values.get("poster-limit", "6000"))
+    cols, rows = int(values.get("poster-cols", "3")), int(values.get("poster-rows", "3"))
+    fixed = values.get("poster-fix", "true").casefold()
+    if not (math.isfinite(height) and math.isfinite(width) and height > 0 and width > 0
+            and 1 <= limit <= 20000 and 1 <= cols <= 100 and 1 <= rows <= 100
+            and fixed in ("true", "false")):
+        raise ValueError("Invalid poster settings: positive size, LIMIT 1–20000, COLS/ROWS 1–100, FIX true/false required.")
+    margins = {side: float(values.get("poster-margin-" + side, default))
+               for side, default in (("left", "15"), ("right", "10"), ("top", "10"), ("bottom", "15"))}
+    if any(not math.isfinite(value) or value < 0 for value in margins.values()):
+        raise ValueError("POSTER-MARGIN values must be finite, nonnegative millimeters.")
+    padding = float(values.get("poster-image-padding", "2"))
+    if not math.isfinite(padding) or padding < 0:
+        raise ValueError("POSTER-IMAGE-PADDING must be finite, nonnegative millimeters.")
+    colors = {key: values.get("poster-" + key.replace("_", "-"), default)
+              for key, default in (("frames", "eeee"), ("background_color", "9bb195"),
+                                   ("image_background_color", "FFFFFF"))}
+    for key, value in colors.items():
+        poster_color(value)
+    return PosterSettings(limit, height, width, cols, rows, fixed == "true",
+                          **{"margin_" + side: value for side, value in margins.items()}, image_padding=padding, **colors)
+
+
+def poster_color(value):
+    color = str(value).strip().lstrip("#")
+    if len(color) not in (3, 4, 6, 8) or not re.fullmatch(r"[0-9a-fA-F]+", color):
+        raise ValueError(f"Invalid poster color {value!r}: use RGB, RGBA, RRGGBB or RRGGBBAA hex.")
+    return ImageColor.getcolor("#" + color, "RGBA")
+
+
+def poster_background(size, color, setup_dir=None, progress=lambda _: None):
+    background = Image.new("RGBA", size, "white")
+    background.alpha_composite(Image.new("RGBA", size, poster_color(color)))
+    if setup_dir is not None:
+        candidates = files(setup_dir, {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}, recursive=False)
+        for path in candidates:
+            try:
+                with Image.open(path) as source:
+                    picture = ImageOps.exif_transpose(source).convert("RGBA")
+                    picture = ImageOps.fit(picture, size, Image.Resampling.LANCZOS)
+                    background.alpha_composite(picture)
+                progress(f"Poster background: {path.name}")
+                break
+            except (OSError, ValueError) as error:
+                progress(f"Skipping unreadable poster background {path.name}: {error}")
+    return background.convert("RGB")
+
+
+def common_metadata(records):
+    return {field: records[0].get(field, "") if all(str(record.get(field, "")) ==
+            str(records[0].get(field, "")) for record in records) else "" for field in FIELDS}
+
+
+def edited_metadata(original, values, baseline):
+    result = dict(original)
+    for field in FIELDS:
+        value = values.get(field, "")
+        if str(value) == str(baseline.get(field, "")):
+            continue
+        old = original.get(field, "")
+        if baseline.get(field, "") == "" and str(value).strip():
+            if field == "anzahl":
+                result[field] = int(old or 0) + int(value)
+            else:
+                separator = "\n" if field == "comment" else ", "
+                result[field] = separator.join(str(part) for part in (old, value) if str(part))
+        else:
+            result[field] = value
+    return validate_record(result)
+
+
+def poster_font(size, bold=False):
+    name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    try:
+        return ImageFont.truetype(name, size)
+    except OSError as error:
+        raise ValueError("Poster fonts unavailable. Install fonts-dejavu-core.") from error
+
+
+def poster_wrap(text, font, width):
+    """Wrap paragraphs and long words without dropping any comment text."""
+    lines = []
+    for paragraph in str(text).split("\n"):
+        line = ""
+        for word in paragraph.split():
+            candidate = (line + " " + word).lstrip()
+            if font.getlength(candidate) <= width:
+                line = candidate
+                continue
+            if line:
+                lines.append(line)
+                line = ""
+            for character in word:
+                if font.getlength(line + character) > width:
+                    if not line:
+                        raise ValueError("Poster text area is too narrow.")
+                    lines.append(line)
+                    line = ""
+                line += character
+        lines.append(line)
+    return lines
+
+
+def poster_text(texts, width, max_height, preferred, minimum, bold=False):
+    for size in range(max(1, preferred), max(1, minimum) - 1, -1):
+        font = poster_font(size, bold)
+        try:
+            lines = [poster_wrap(text, font, width) if text else [] for text in texts]
+        except ValueError:
+            continue
+        line_height = sum(font.getmetrics())
+        height = max((len(block) * line_height for block in lines), default=0)
+        if height <= max_height:
+            return font, lines, line_height, height
+    raise ValueError("Poster text does not fit. Increase POSTER-SIZE/LIMIT, reduce the grid or shorten comments.")
+
+
+def poster_draw_text(draw, lines, font, line_height, left, top, width):
+    for line in lines:
+        draw.text((left + width / 2, top), line, font=font, fill="#202020", anchor="mt")
+        top += line_height
+
+
+def poster_caption(record, box_addition="", comment_addition=""):
+    comment = "\n".join(str(value).strip() for value in
+                        (record.get("comment", ""), box_addition, comment_addition)
+                        if str(value).strip())
+    box = str(record.get("box", "")).strip()
+    return f"{box}: {comment}" if box and comment else box or comment
+
+
+def poster_cells(count, cols, rows, bounds, gap):
+    """Keep configured row heights; reserve unused rows for the final photo."""
+    left, top, right, bottom = bounds
+    height = (bottom - top - gap * (rows - 1)) / rows
+    preceding_rows = math.ceil((count - 1) / cols)
+    expand_last = count < cols * rows and preceding_rows < rows
+    regular_count = count - 1 if expand_last else count
+    cells = []
+    for index in range(regular_count):
+        row, col = divmod(index, cols)
+        row_count = min(cols, regular_count - row * cols)
+        width = (right - left - gap * (row_count - 1)) / row_count
+        x, y = left + col * (width + gap), top + row * (height + gap)
+        cells.append(tuple(round(value) for value in (x, y, x + width, y + height)))
+    if expand_last:
+        cells.append((left, round(top + preceding_rows * (height + gap)), right, bottom))
+    return cells
+
+
+def create_poster(paths, profile, settings, progress=lambda _: None, *,
+                  title="", box_addition="", comment_addition="", setup_dir=None):
+    paths = list(paths)
+    if not paths or len(paths) > settings.cols * settings.rows:
+        raise ValueError(f"Select between 1 and {settings.cols * settings.rows} images.")
+    if any(path.suffix.lower() not in {".jpg", ".jpeg", ".png"} for path in paths):
+        raise ValueError("Posters require JPG or PNG images.")
+    scale = settings.limit / max(settings.height, settings.width)
+    width, height = max(1, round(settings.width * scale)), max(1, round(settings.height * scale))
+    left_edge, top_edge = round(settings.margin_left * scale), round(settings.margin_top * scale)
+    right_edge = width - round(settings.margin_right * scale)
+    bottom_edge = height - round(settings.margin_bottom * scale)
+    content_width, content_height = right_edge - left_edge, bottom_edge - top_edge
+    if content_width <= 0 or content_height <= 0:
+        raise ValueError(f"POSTER-SIZE={settings.height:g}x{settings.width:g} mm leaves no image area: "
+                         f"left+right margins={settings.margin_left + settings.margin_right:g} mm, "
+                         f"top+bottom margins={settings.margin_top + settings.margin_bottom:g} mm.")
+    metadata = []
+    for index, path in enumerate(paths):
+        progress(f"Reading poster metadata: {index + 1}/{len(paths)}")
+        metadata.append(read_metadata(path))
+    gap = max(1, round(3 * scale))
+    title_font, title_lines, title_line_height, title_height = poster_text(
+        [title], content_width, content_height * .15, round(5 * scale), round(1.5 * scale), True)
+    grid_top = top_edge + title_height + (gap if title_height else 0)
+    cells = poster_cells(len(paths), settings.cols, settings.rows,
+                         (left_edge, grid_top, right_edge, bottom_edge), gap)
+    cell_width = min(right - left for left, top, right, bottom in cells)
+    cell_height = min(bottom - top for left, top, right, bottom in cells)
+    if min(cell_width, cell_height) < 2:
+        raise ValueError("Poster grid does not fit inside the margins. Increase POSTER-SIZE/LIMIT or reduce COLS/ROWS.")
+    inset = max(1, round(.3 * scale)) + max(0, round(settings.image_padding * scale))
+    cell_width -= 2 * inset
+    cell_height -= 2 * inset
+    if min(cell_width, cell_height) < 2:
+        raise ValueError("Poster cells are too small for frames. Increase SIZE/LIMIT or reduce COLS/ROWS.")
+    comments = [poster_caption(record, box_addition, comment_addition) for record in metadata]
+    font, captions, line_height, caption_height = poster_text(
+        comments, int(cell_width), cell_height * .4, round(3 * scale), round(1 * scale))
+    caption_space = caption_height + (max(1, round(scale)) if caption_height else 0)
+    canvas = poster_background((width, height), settings.background_color, setup_dir, progress)
+    draw = ImageDraw.Draw(canvas)
+    poster_draw_text(draw, title_lines[0], title_font, title_line_height,
+                     left_edge, top_edge, content_width)
+    for index, path in enumerate(paths):
+        progress(f"Poster: {index + 1}/{len(paths)} — {path.name}")
+        left, top, right, bottom = cells[index]
+        panel = Image.new("RGBA", (right - left, bottom - top), poster_color(settings.image_background_color))
+        frame_width = max(1, round(.3 * scale))
+        # Composite translucent frame colors over the image background.
+        border = Image.new("RGBA", panel.size)
+        ImageDraw.Draw(border).rectangle((0, 0, panel.width - 1, panel.height - 1),
+                                         outline=poster_color(settings.frames), width=frame_width)
+        panel.alpha_composite(border)
+        canvas.paste(panel, (left, top), panel)
+        inset = frame_width + max(0, round(settings.image_padding * scale))
+        left, top, right, bottom = left + inset, top + inset, right - inset, bottom - inset
+        with Image.open(path) as source:
+            photo = ImageOps.exif_transpose(source).convert("RGBA")
+            image_height = bottom - top - caption_space
+            if image_height < 1:
+                raise ValueError("No room for images below poster captions.")
+            photo = ImageOps.contain(photo, (right - left, image_height), Image.Resampling.LANCZOS)
+            own_caption_height = len(captions[index]) * line_height
+            text_gap = max(1, round(scale)) if own_caption_height else 0
+            group_height = photo.height + text_gap + own_caption_height
+            photo_top = top + (bottom - top - group_height) // 2
+            canvas.paste(photo, (left + (right - left - photo.width) // 2, photo_top), photo)
+            poster_draw_text(draw, captions[index], font, line_height,
+                             left, photo_top + photo.height + text_gap, right - left)
+    output = io.BytesIO()
+    canvas.save(output, "JPEG", quality=95,
+                dpi=(width * 25.4 / settings.width, height * 25.4 / settings.height))
+    directory = profile.images.parent / "poster"
+    if directory.is_symlink():
+        raise ValueError("Poster directory must not be a symbolic link.")
+    target = reserve_output(directory, datetime.now().strftime("poster_%Y%m%d_%H%M%S.jpg"))
+    try:
+        atomic_write(target, output.getvalue())
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    return target
 
 
 def files(folder, extensions, recursive=True):
@@ -452,12 +719,12 @@ def save_media(source, profile, metadata, limit):
             target.unlink(missing_ok=True)
 
 
-def save_batch(paths, profile, record, limit, progress=lambda _: None):
+def save_batch(paths, profile, record, limit, progress=lambda _: None, records=None):
     selection = list(paths)
     for index, source in enumerate(selection):
         try:
             progress(f"Saving {index + 1}/{len(selection)}: {source.name}")
-            selection[index] = save_media(source, profile, record, limit)
+            selection[index] = save_media(source, profile, records[index] if records is not None else record, limit)
         except Exception as error:
             raise BatchError(f"Saved {index} of {len(selection)} files. {source.name}: {error}", selection, index) from error
     return selection

@@ -227,7 +227,7 @@ class MediaGrid(ttk.Frame):
     def __init__(self, parent, paths, base, changed):
         super().__init__(parent)
         self.paths, self.base, self.changed = list(paths), base, changed
-        self.selected = set()
+        self.selected = {}
         self.anchor = None
         self.columns = 4
         self.cache = OrderedDict()
@@ -266,10 +266,10 @@ class MediaGrid(ttk.Frame):
         self.redraw()
 
     def selection(self):
-        return [path for index, path in enumerate(self.paths) if index in self.selected]
+        return [self.paths[index] for index in self.selected]
 
     def select_all(self):
-        self.selected = set(range(len(self.paths)))
+        self.selected.update(dict.fromkeys(range(len(self.paths))))
         self.changed()
         self.redraw()
         return "break"
@@ -287,12 +287,13 @@ class MediaGrid(ttk.Frame):
         if not 0 <= index < len(self.paths):
             return
         if event.state & 1 and self.anchor is not None:
-            self.selected.update(range(min(self.anchor, index), max(self.anchor, index) + 1))
+            self.selected.update(dict.fromkeys(range(self.anchor, index + (1 if index >= self.anchor else -1),
+                                                     1 if index >= self.anchor else -1)))
         else:
             if index in self.selected:
-                self.selected.remove(index)
+                self.selected.pop(index)
             else:
-                self.selected.add(index)
+                self.selected[index] = None
             self.anchor = index
         self.changed()
         self.redraw()
@@ -485,6 +486,7 @@ class App:
         self.open_media_button = self.button(actions, "Open JPG / MP4", self.choose_media, side="left")
         self.open_json_button = self.button(actions, "Open JSON", self.choose_json, side="left", padx=6)
         self.save_button = self.button(actions, "Save", self.save, side="left", padx=6)
+        self.button(actions, "Poster", self.make_poster, side="left", padx=6)
         self.search_button = self.button(actions, "Search", self.search_clicked, side="left", padx=6)
         self.repeat_button = self.button(actions, "Repeat search", self.repeat_search, side="left", padx=6)
         self.button(actions, "Clear all", self.clear, side="left", padx=6)
@@ -788,19 +790,39 @@ class App:
             self.error("Select JPG, PNG or MP4 files.")
             return
         def work():
-            values = core.read_metadata(paths[0])
-            return values, self.preview_result(paths[0])
+            records = [core.read_metadata(path) for path in dict.fromkeys(paths)]
+            return records, self.preview_result(paths[0])
         def done(result):
-            values, (image, warning) = result
+            records, (image, warning) = result
+            self.media_records = records
+            values = records[0] if len(records) == 1 else core.common_metadata(records)
+            self.media_baseline = dict(values)
             self.media, self.box_path, self.records, self.record_index = list(dict.fromkeys(paths)), None, [], None
             self.field_widgets["device"].configure(values=[])
             self.fill(values)
             self.preview_path = paths[0]
             self.preview.set_image(image)
-            self.selected.set(f"{len(self.media)} file(s) selected — preview and initial values: {paths[0].name}")
+            self.selected.set(f"{len(self.media)} file(s) selected — preview: {paths[0].name}")
             if warning:
                 self.status.set(warning)
         self.task(work, done)
+
+    def make_poster(self):
+        if self.busy or self.search_mode:
+            return
+        paths, profile, settings = list(self.media), self.profile, self.settings.poster
+        values = self.values()
+        baseline = getattr(self, "media_baseline", {})
+        additions = {field: values.get(field, "") if values.get(field, "") != str(baseline.get(field, ""))
+                     else "" for field in ("box", "comment")}
+        def done(path):
+            self.status.set(f"Poster saved: {path}")
+            messagebox.showinfo("Poster", f"Poster saved:\n{path}", parent=self.root)
+        self.task(lambda: core.create_poster(paths, profile, settings, self.log,
+                                            title=values.get("category", ""),
+                                            box_addition=additions["box"],
+                                            comment_addition=additions["comment"],
+                                            setup_dir=self.settings.path.parent), done)
 
     def choose_json(self):
         if self.busy or self.search_mode:
@@ -902,17 +924,23 @@ class App:
                     return
                 values["box"] = name
                 self.variables["box"].set(name)
+            batch_records = ([core.edited_metadata(original, values, self.media_baseline)
+                              for original in self.media_records] if len(self.media) > 1 else None)
             record = core.validate_record(values)
             path = self.box_path if self.box_path else self.profile.data / core.box_filename(record["box"]) if not self.media else None
         except Exception as error:
             self.error(error)
+            return
+        if len(self.media) > 1 and not messagebox.askokcancel(
+                "Save", "Attention! All selected Images get this texts",
+                parent=self.root, icon="warning", default="cancel"):
             return
         selected, profile, media = self.record_index, self.profile, list(self.media)
         def work():
             self.settings.remember_category(profile, record["category"])
             if media:
                 try:
-                    saved = core.save_batch(media, profile, record, self.settings.limit, self.log)
+                    saved = core.save_batch(media, profile, record, self.settings.limit, self.log, records=batch_records)
                 except core.BatchError as error:
                     if error.completed:
                         try:
@@ -940,6 +968,10 @@ class App:
             self.refresh_profile()
             if data[0] == "media":
                 self.media = data[1]
+                self.media_records = batch_records or [record]
+                self.media_baseline = (core.common_metadata(self.media_records) if len(self.media_records) > 1
+                                       else dict(self.media_records[0]))
+                self.fill(self.media_baseline)
                 self.preview_path = self.media[0]
                 self.preview.set_image(data[2][0])
                 self.selected.set(f"Saved {len(self.media)} file(s) locally — {self.media[0]}")
@@ -1057,7 +1089,25 @@ class App:
         ttk.Label(dialog, text=str(self.settings.path), padding=10).pack(anchor="w")
         text = tk.Text(dialog, wrap="none", undo=True, font=("Monospace", 11))
         text.pack(fill="both", expand=True, padx=10)
-        text.insert("1.0", self.settings.path.read_text(encoding="utf-8"))
+        setup_text = self.settings.path.read_text(encoding="utf-8")
+        if not any(name.casefold() == "poster" for name in core.sections(setup_text)):
+            poster = self.settings.poster
+            setup_text += (f"\n[Poster]\nPOSTER-LIMIT={poster.limit}\n"
+                           f"POSTER-SIZE={poster.height:g}x{poster.width:g}\n"
+                           f"POSTER-COLS={poster.cols}\nPOSTER-ROWS={poster.rows}\n"
+                           f"POSTER-FIX={str(poster.fixed).lower()}\n")
+        groups = core.sections(setup_text)
+        poster_section = next(name for name in groups if name.casefold() == "poster")
+        additions = []
+        for key in ("margin_left", "margin_right", "margin_top", "margin_bottom",
+                    "frames", "background_color", "image_background_color", "image_padding"):
+            option = "POSTER-" + key.upper().replace("_", "-")
+            if option.lower() not in groups[poster_section]:
+                additions.append(f"{option}={getattr(self.settings.poster, key)}")
+        if additions:
+            heading = f"[{poster_section}]"
+            setup_text = setup_text.replace(heading, heading + "\n" + "\n".join(additions), 1)
+        text.insert("1.0", setup_text)
         def save():
             try:
                 self.settings.save_text(text.get("1.0", "end-1c") + "\n")

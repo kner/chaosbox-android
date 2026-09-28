@@ -61,7 +61,7 @@ Priority: optional
 Architecture: all
 Maintainer: ChaosBox maintainers <chaosbox@localhost>
 Installed-Size: {size}
-Depends: python3 (>= 3.10), python3-tk, python3-pil (>= 9.1), python3-pil.imagetk, python3-paramiko, libimage-exiftool-perl, ffmpeg, xclip
+Depends: python3 (>= 3.10), python3-tk, python3-pil (>= 9.1), python3-pil.imagetk, python3-paramiko, libimage-exiftool-perl, ffmpeg, xclip, fonts-dejavu-core
 Description: Native ChaosBox desktop editor
  Edit image and video metadata and JSON records with a Python/Tk interface.
  Includes image viewing, search and optional manual SSH synchronization.

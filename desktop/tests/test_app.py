@@ -16,6 +16,58 @@ from app import App, MediaGrid, MediaFolderDialog, copy_image_clipboard, user_co
 import core
 
 
+class BatchSaveConfirmationTests(unittest.TestCase):
+    def setUp(self):
+        self.app = App.__new__(App)
+        app = self.app
+        app.busy = app.search_mode = False
+        app.root = Mock()
+        app.media = [Path("first.jpg"), Path("second.jpg")]
+        app.media_records = [core.normalized({"box": "A", "comment": "first"}),
+                             core.normalized({"box": "B", "comment": "second"})]
+        app.media_baseline = core.common_metadata(app.media_records)
+        app.values = Mock(return_value=dict(app.media_baseline, comment="additional text"))
+        app.box_path = app.record_index = None
+        app.profile = SimpleNamespace(images=Path("/tmp/test-images"))
+        app.settings = SimpleNamespace(limit=3000, remember_category=Mock())
+        app.task = Mock()
+        app.error = Mock()
+        app.log = Mock()
+        app.preview_result = Mock(return_value=(None, ""))
+
+    def test_cancel_leaves_files_and_inputs_untouched(self):
+        with patch("app.messagebox.askokcancel", return_value=False) as confirm, \
+             patch("core.save_batch") as save:
+            self.app.save()
+        confirm.assert_called_once_with("Save", "Attention! All selected Images get this texts",
+                                        parent=self.app.root, icon="warning", default="cancel")
+        self.app.task.assert_not_called()
+        self.app.settings.remember_category.assert_not_called()
+        save.assert_not_called()
+        self.assertEqual(self.app.values()["comment"], "additional text")
+        self.app.error.assert_not_called()
+
+    def test_ok_saves_appended_text_for_each_selected_image(self):
+        self.app.task.side_effect = lambda work, done, failed: work()
+        with patch("app.messagebox.askokcancel", return_value=True), \
+             patch("core.save_batch", return_value=self.app.media) as save, \
+             patch("core.update_index"):
+            self.app.save()
+        records = save.call_args.kwargs["records"]
+        self.assertEqual([record["comment"] for record in records],
+                         ["first\nadditional text", "second\nadditional text"])
+        self.assertEqual([record["box"] for record in records], ["A", "B"])
+        self.app.task.assert_called_once()
+        self.app.error.assert_not_called()
+
+    def test_single_image_does_not_ask_for_batch_confirmation(self):
+        self.app.media = self.app.media[:1]
+        with patch("app.messagebox.askokcancel") as confirm:
+            self.app.save()
+        confirm.assert_not_called()
+        self.app.task.assert_called_once()
+
+
 class UserCommentTests(unittest.TestCase):
     def test_caption_shows_fields_in_order_and_limits_unicode_to_60_characters(self):
         raw = json.dumps({"box": "A11", "category": "Elektronik", "comment": "Grüße 🎬 " + "ä" * 70,
