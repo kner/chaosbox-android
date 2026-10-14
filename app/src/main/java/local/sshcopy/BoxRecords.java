@@ -127,9 +127,10 @@ final class BoxRecords {
                     if (existing.has("package")) existing.put("package", pack);
                 }
             } else records.put(incoming);
+            for (int i = 0; i < records.length(); i++) records.getJSONObject(i).remove("modified");
             Path temporary = Files.createTempFile(directory.toPath(), ".box-", ".tmp");
             try {
-                Files.write(temporary, records.toString(2).getBytes(StandardCharsets.UTF_8));
+                Files.write(temporary, (records.toString(2) + "\n").getBytes(StandardCharsets.UTF_8));
                 if (Files.exists(target)) {
                     long modified = Math.max(System.currentTimeMillis(),
                             (Files.getLastModifiedTime(target).toMillis() / 1000 + 1) * 1000);

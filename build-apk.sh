@@ -15,9 +15,20 @@ if [[ -n "${JAVA_HOME:-}" ]]; then
     export PATH="$JAVA_HOME/bin:$PATH"
 fi
 command -v javac >/dev/null || { echo "Fehler: JDK 17 oder neuer fehlt." >&2; exit 1; }
-export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}"
+if [[ -d "$PWD/.tooling/android-sdk" ]]; then
+    default_android_sdk="$PWD/.tooling/android-sdk"
+else
+    default_android_sdk="/opt/android-sdk"
+fi
+export ANDROID_HOME="${ANDROID_HOME:-$default_android_sdk}"
 export ANDROID_SDK_ROOT="$ANDROID_HOME"
-gradle="${GRADLE_HOME:-/opt/gradle-8.11.1}/bin/gradle"
+if [[ -x "$PWD/.tooling/gradle-8.11.1/bin/gradle" ]]; then
+    default_gradle_home="$PWD/.tooling/gradle-8.11.1"
+    export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$PWD/.tooling/gradle-user-home}"
+else
+    default_gradle_home="/opt/gradle-8.11.1"
+fi
+gradle="${GRADLE_HOME:-$default_gradle_home}/bin/gradle"
 [[ -x "$gradle" ]] || { echo "Fehler: Gradle fehlt: $gradle" >&2; exit 1; }
 [[ -f "$ANDROID_HOME/platforms/android-35/android.jar" ]] || {
     echo "Fehler: Android SDK Platform 35 fehlt in $ANDROID_HOME." >&2

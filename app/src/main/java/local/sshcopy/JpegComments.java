@@ -84,6 +84,15 @@ final class JpegComments {
         return -1;
     }
 
+    private static void removeEntry(ByteBuffer b, int directory, int tag) throws IOException {
+        int at = entry(b, directory, tag);
+        if (at < 0) return;
+        int count = b.getShort(directory) & 65535;
+        int end = directory + 2 + count * 12 + 4;
+        System.arraycopy(b.array(), at + 12, b.array(), at, end - at - 12);
+        b.putShort(directory, (short)(count - 1));
+    }
+
     private static byte[] updateTiff(byte[] original, String comment) throws IOException {
         try {
             if (original.length < 8 || !((original[0]=='I' && original[1]=='I')
@@ -91,6 +100,15 @@ final class JpegComments {
             ByteOrder order = original[0]=='I' ? ByteOrder.LITTLE_ENDIAN : ByteOrder.BIG_ENDIAN;
             ByteBuffer old = ByteBuffer.wrap(original).order(order);
             if (old.getShort(2) != 42) throw new IOException("Invalid TIFF");
+            if (comment == null) {
+                byte[] cleared = original.clone();
+                ByteBuffer b = ByteBuffer.wrap(cleared).order(order);
+                int root = old.getInt(4);
+                int pointer = entry(old, root, 0x8769);
+                if (pointer >= 0) removeEntry(b, old.getInt(pointer + 8), 0x9286);
+                removeEntry(b, root, 0x9286);
+                return cleared;
+            }
             byte[] text = comment.getBytes(StandardCharsets.UTF_8);
             byte[] user = new byte[text.length + 8]; // Undefined encoding identifier; payload is UTF-8.
             System.arraycopy(text, 0, user, 8, text.length);

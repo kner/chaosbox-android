@@ -1608,13 +1608,12 @@ public class EditorActivity extends Activity {
             try {
                 JSONObject json = new JSONObject();
                 json.put("created", created);
-                json.put("modified", modified);
                 json.put("box", box);
                 json.put("anzahl", amount);
                 json.put("device", device);
                 json.put("alias", alias);
                 json.put("package", packageName);
-                json.put("category", category);
+                json.put("category", category.toUpperCase(java.util.Locale.ROOT));
                 json.put("comment", comment);
                 return json.toString();
             } catch (JSONException impossible) {
@@ -1681,10 +1680,10 @@ public class EditorActivity extends Activity {
             boolean jpegSource = "image/jpeg".equals(bounds.outMimeType);
             if (!jpegSource && !"image/png".equals(bounds.outMimeType))
                 throw new IOException("Select a JPG or PNG file");
-            byte[] exif = exifSegment(comment);
+            byte[] exif = new byte[0];
             if (jpegSource && Math.max(bounds.outWidth, bounds.outHeight) <= maxSide)
-                return JpegComments.update(source, comment, exif);
-            if (jpegSource) exif = JpegComments.resizedExifSegment(source, comment, exif);
+                return XmpRecords.write(JpegComments.update(source, null, new byte[0]), comment);
+            if (jpegSource) exif = JpegComments.resizedExifSegment(source, null, new byte[0]);
 
             int sample = 1;
             int longest = Math.max(bounds.outWidth, bounds.outHeight);
@@ -1724,7 +1723,7 @@ public class EditorActivity extends Activity {
             System.arraycopy(jpeg, 0, result, 0, 2);
             System.arraycopy(exif, 0, result, 2, exif.length);
             System.arraycopy(jpeg, 2, result, 2 + exif.length, jpeg.length - 2);
-            return result;
+            return XmpRecords.write(result, comment, source);
         }
 
         private static Bitmap orient(Bitmap source, int orientation) {
@@ -1779,6 +1778,10 @@ public class EditorActivity extends Activity {
                 while ((n = in.read(buffer)) >= 0) all.write(buffer, 0, n);
                 source = all.toByteArray();
             }
+            return XmpRecords.read(source, readLegacyComment(source));
+        }
+
+        private static String readLegacyComment(byte[] source) {
             try {
                 int app1 = findExifTiff(source);
                 if (app1 < 0) return "";

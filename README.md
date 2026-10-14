@@ -118,7 +118,7 @@ records is preserved in full and uses the first nonempty category.
 
 `[ImageSize]` with `LIMIT=3000` sets the maximum length of the longer image edge
 in pixels. If the section is missing, the default is 3000. Smaller JPGs retain
-their image data; saving only updates the UserComment. The previous file size
+their image data; saving only updates the metadata. The previous file size
 limit no longer applies. PNG files are saved as JPGs with the same pixel limit;
 smaller images are not enlarged. Transparency is flattened against a white
 background. The original PNG is preserved, even inside the configured image
@@ -151,14 +151,30 @@ This configuration supersedes the older path descriptions below.
 ## Usage
 
 The main screen provides JPG/PNG selection, Box/Category/Comment fields,
-EXIF UserComment metadata, and saving. New images from outside the JPG folder
+desktop-compatible XMP metadata, and saving. New images from outside the JPG folder
 are reduced to a maximum of 3000 pixels on their longer edge when needed.
 Images from the configured JPG folder are overwritten atomically using the
 same filename, without a `_cb` suffix. JPGs within the configured pixel LIMIT
 are not recompressed; their image data and other EXIF metadata are preserved.
-Larger JPGs are reduced to the configured longer-edge length. Comments are
-stored as UTF-8 with an undefined EXIF character-set prefix; older ASCII and
-Unicode comments remain readable. Existing metadata is loaded when opening a file.
+Larger JPGs are reduced to the configured longer-edge length. Image records use
+`urn:chaosbox:metadata:1.0/` (`chaosbox:version=1`): box, anzahl, device,
+alias, category and package. Comments use `dc:description` with `x-default`;
+creation dates use `xmp:CreateDate`, matching chaosbox-desktop. Unrelated XMP is
+retained, including when resizing. Legacy EXIF UserComment records remain
+readable and are replaced by XMP when saved. MP4 records continue to use JSON
+in the standard `©cmt` comment. JSON boxes contain arrays of records with the
+same field names and `created`; saves remove the obsolete `modified` field.
+Categories are saved in uppercase, as on desktop.
+
+The exchange test checks both directions using the actual desktop reader and
+writer, including Unicode, empty fields and unrelated XMP preservation:
+
+```sh
+/usr/bin/python3 tests/test-xmp.py --json-jar /path/to/org.json.jar
+```
+
+It requires a JDK, ExifTool and the desktop Python dependencies; the reference
+project defaults to the sibling `chaosbox-desktop` directory (`--desktop` overrides it).
 
 - Images: `/storage/emulated/0/ChaosBox/JPG`
 - Configuration: `/storage/emulated/0/ChaosBox/Setup/setup.ini`
@@ -288,7 +304,7 @@ Install JDK 17+, Android SDK platform 35/build tools 35.0.0, and Gradle 8.11.1.
 Set `sdk.dir` in `local.properties` to your SDK path, then run:
 
 ```bash
-gradle :app:assembleDebug :app:lintDebug
+./build-apk.sh
 ```
 
 The APK is `app/build/outputs/apk/debug/app-debug.apk`. The delivered APK is a
@@ -298,10 +314,13 @@ Libraries: [JSch](https://github.com/mwiede/jsch) and
 [Bouncy Castle](https://www.bouncycastle.org/).
 Storage behavior: [Android documentation](https://developer.android.com/training/data-storage/manage-all-files).
 
-The system-wide Android SDK is in `/opt/android-sdk`, and Gradle 8.11.1 is in
-`/opt/gradle-8.11.1`. `./build-apk.sh` builds, lints, and copies the result to
-`SSHCopy-debug.apk`. `local.properties` points to `/opt/android-sdk`.
-User caches and the original debug signing key are in `~/.gradle` and `~/.android`.
+The local toolchain is installed in `.tooling/android-sdk` and
+`.tooling/gradle-8.11.1` (ignored by Git). `./build-apk.sh` detects these paths,
+builds, lints, and copies the result to `SSHCopy-debug.apk`. The local Gradle
+cache is `.tooling/gradle-user-home`; `local.properties` points to the local SDK.
+`ANDROID_HOME`, `GRADLE_HOME`, and `GRADLE_USER_HOME` can override these defaults.
+Without the local toolchain, the script falls back to `/opt/android-sdk` and
+`/opt/gradle-8.11.1`. The original debug signing key remains in `~/.android`.
 
 File-selection regression check:
 

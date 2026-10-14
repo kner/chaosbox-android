@@ -35,6 +35,7 @@ public final class BoxRecordsTest {
             File sensor = BoxRecords.save(dir, "sensors", "{\"device\":\"A\",\"count\":2,\"pack\":\"old\",\"created\":\"original\",\"custom\":{\"keep\":true}}");
             BoxRecords.save(dir, "sensors", "{\"device\":\"A\",\"anzahl\":5,\"package\":\"new\",\"comment\":\"Grüße 😀\",\"created\":\"replacement\",\"modified\":\"now\"}");
             JSONArray updated = new JSONArray(read(sensor));
+            if (updated.getJSONObject(0).has("modified")) throw new AssertionError("Obsolete modified field");
             org.json.JSONObject item = updated.getJSONObject(0);
             if (updated.length()!=1 || item.getInt("count")!=5 || item.getInt("anzahl")!=5
                     || !item.getString("pack").equals("new") || !item.getString("package").equals("new")
