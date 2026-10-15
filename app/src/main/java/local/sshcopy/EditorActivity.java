@@ -1735,7 +1735,7 @@ public class EditorActivity extends Activity {
         }
 
         private static String commentText(JSONObject json) {
-            return json.optString("comment", json.optString("kommentar", json.optString("Kommentar", "")));
+            return SyncStore.commentText(json);
         }
 
         static MetadataData parse(String raw) {

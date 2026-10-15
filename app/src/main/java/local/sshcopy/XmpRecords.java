@@ -112,7 +112,7 @@ final class XmpRecords {
                 remove(d,ns(field),name(field));
                 String prefix=field.equals("comment")?"dc":field.equals("created")?"xmp":"chaosbox";
                 Element property=d.createElementNS(ns(field),prefix+":"+name(field));
-                String text=record.optString(field,"");
+                String text=record.isNull(field)?"":record.optString(field,"");
                 if(field.equals("comment")) {
                     Element alt=d.createElementNS(RDF,"rdf:Alt"), li=d.createElementNS(RDF,"rdf:li");
                     li.setAttributeNS("http://www.w3.org/XML/1998/namespace","xml:lang","x-default");
@@ -147,7 +147,13 @@ final class XmpRecords {
     }
     private static void remove(Document d,String ns,String key) {
         NodeList nodes=d.getElementsByTagNameNS(ns,key);
-        while(nodes.getLength()>0) { Node n=nodes.item(0); n.getParentNode().removeChild(n); }
+        // Android may return a snapshot NodeList: removing a node does not
+        // necessarily remove it from the query result. Visit each match once.
+        for(int i=nodes.getLength()-1;i>=0;i--) {
+            Node n=nodes.item(i);
+            Node parent=n.getParentNode();
+            if(parent!=null) parent.removeChild(n);
+        }
         NodeList all=d.getElementsByTagName("*");
         for(int i=0;i<all.getLength();i++) ((Element)all.item(i)).removeAttributeNS(ns,key);
     }

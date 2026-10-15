@@ -14,6 +14,12 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-wire-') as temp:
     files=['SyncStore','LocalData','BoxRecords','XmpRecords','JpegComments','Mp4Comments']
     run('javac','-cp',a.json_jar,'-d',classes,*[ROOT/f'app/src/main/java/local/sshcopy/{name}.java' for name in files],ROOT/'tests/SyncStoreTest.java')
     def java(command,folder,*args):return run('java','-cp',f'{classes}:{a.json_jar}','local.sshcopy.SyncStoreTest',command,folder,*args)
+    for key in ['comment','kommentar','Kommentar']:
+        for value in [None,'','null','Grüße 東京']:
+            record={key:value}
+            actual=json.loads(java('normalize',root,json.dumps(record)))
+            assert actual==chaos_sync.normalized(record),(record,actual)
+            assert actual['comment']==('' if value is None else value)
     def store(folder):
         profile=core.Profile('','',folder/'JPG',folder/'TXT',folder/'TXT',folder/'.indices',[],[])
         return core.sync_store(profile)
@@ -26,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-wire-') as temp:
     run('ffmpeg','-v','error','-f','lavfi','-i','color=black:s=16x16:r=1','-t','1','-c:v','libx264','-pix_fmt','yuv420p',fixture)
     for folder in [desktop,android]:
         (folder/'TXT').mkdir(parents=True);(folder/'JPG').mkdir()
-        (folder/'TXT/box.json').write_text('[{"box":"A11","device":"one","comment":"Grüße 東京"},{"box":"A11","device":"two"}]')
+        (folder/'TXT/box.json').write_text('[{"box":"A11","device":"one","comment":"Grüße 東京"},{"box":"A11","device":"two","comment":null}]')
         Image.new('RGB',(20,10)).save(folder/'JPG/photo.jpg')
         shutil.copy(fixture,folder/'JPG/clip.mp4')
         (folder/'TXT/grouped.json').write_text('{"z":{"category":"Werkzeug"},"a":{"alias":"Reserve","comment":"grouped"}}')

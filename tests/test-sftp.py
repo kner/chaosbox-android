@@ -69,29 +69,43 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-local-sftp-') as temporary:
     subprocess.run(['javac','-cp',classpath,'-d',str(folder),str(ROOT/'tests/SftpSyncTest.java')],check=True)
     first,second=folder/'android',folder/'desktop'
     atomic(first/'TXT/box.json','[{"device":"one","comment":"SFTP Grüße 東京"}]')
-    store=Store(second/'JPG',second/'TXT')
+    atomic(first/'JPG/SCHRAUBEN/Grüße photo.jpg','{"comment":"photo"}')
+    store=Store(second/'JPG',second/'TXT',reader=lambda path:json.loads(path.read_text()),writer=lambda path,record:atomic(path,json.dumps(record)))
     def java():
         result=subprocess.check_output(['java','-cp',f'{folder}:{classpath}','local.sshcopy.SftpSyncTest',str(first),str(port),str(keypath),str(hosts)],text=True).strip()
         assert result=='0',result
-        remote_index=json.loads((server_root/'shared/.chaosbox-sync/checksums.json').read_text())
+        remote_index=json.loads((server_root/'shared/TXT/.chaosbox-sync/checksums.json').read_text())
         assert valid_manifest(remote_index)
         assert remote_index['checksum']==json.loads((first/'TXT/.chaosbox-sync/checksums.json').read_text())['checksum']
     def python():
         config=dict(host='127.0.0.1',port=port,user='tester',keyfile=str(keypath),knownhosts=str(hosts))
         with sftp_connection(config,threading.Event(),progress=lambda _:None) as sftp:
-            sftp_exchange(store,sftp,'shared/.chaosbox-sync',progress=lambda _:None)
+            sftp_exchange(store,sftp,'shared/TXT/.chaosbox-sync',progress=lambda _:None)
         store.apply()
-        remote_index=json.loads((server_root/'shared/.chaosbox-sync/checksums.json').read_text())
+        remote_index=json.loads((server_root/'shared/TXT/.chaosbox-sync/checksums.json').read_text())
         assert valid_manifest(remote_index) and remote_index['checksum']==store.checksums()['checksum']
     try:
         java();python();assert json.loads((second/'TXT/box.json').read_text())[0]['comment']=='SFTP Grüße 東京'
+        projected=server_root/'shared/JPG/SCHRAUBEN/Grüße photo.jpg'
+        assert json.loads(projected.read_text())['comment']=='photo'
+        android_photo=first/'JPG/SCHRAUBEN/Grüße photo.jpg'
+        record=json.loads(android_photo.read_text());record['comment']='Android photo edit'
+        atomic(android_photo,json.dumps(record));java()
+        assert json.loads(projected.read_text())['comment']=='Android photo edit'
+        python()
+        op=next(v[0] for v in store.heads().values() if v[0]['kind']=='media')
+        record=dict(op['record'],comment='updated photo')
+        photo=second/'JPG/SCHRAUBEN/Grüße photo.jpg';atomic(photo,json.dumps(record))
+        python();java();assert json.loads(projected.read_text())['comment']=='updated photo'
+        store.delete(photo);python();java();assert not projected.exists()
+        python()  # Receive Android's new device acknowledgement before measuring reuse.
         operation_reads.clear();python();assert not operation_reads,operation_reads
         store.delete(second/'TXT/box.json',0);python();java()
         operation_reads.clear();java();assert not operation_reads,operation_reads
         assert json.loads((first/'TXT/box.json').read_text())==[]
-        assert not (server_root/'shared/.chaosbox-sync/transfer.lock').exists()
-        assert (server_root/'shared/.chaosbox-sync/.htaccess').read_text()=='Require all denied\n'
-        print('PASS: actual JSch ↔ Paramiko SFTP, strict host verification, Unicode, deletion propagation, device ACKs, identical checksums, zero unchanged operation downloads and lock cleanup')
+        assert not (server_root/'shared/TXT/.chaosbox-sync/transfer.lock').exists()
+        assert (server_root/'shared/TXT/.chaosbox-sync/.htaccess').read_text()=='Require all denied\n'
+        print('PASS: actual JSch ↔ Paramiko SFTP, named JPG creation/update/deletion, strict host verification, Unicode, deletion propagation, device ACKs, identical checksums, zero unchanged operation downloads and lock cleanup')
     finally:
         stop.set();thread.join(2);listener.close()
         for connection in connections:connection.close()

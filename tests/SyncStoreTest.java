@@ -17,6 +17,7 @@ public final class SyncStoreTest {
             public void write(File file,JSONObject record) throws Exception {if(Mp4Comments.isVideo(file.getName()))Mp4Comments.write(file,record.toString());else SyncStore.atomic(file,XmpRecords.write(Files.readAllBytes(file.toPath()),record.toString()));}
         });
         switch(args[0]) {
+            case "normalize": System.out.println(SyncStore.canonical(SyncStore.normalized(new JSONObject(args[2])))); break;
             case "capture": store.capture(); break;
             case "checksums": System.out.println(SyncStore.canonical(store.checksums())); break;
             case "apply": System.out.println(store.apply().size()); break;

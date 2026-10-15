@@ -59,7 +59,7 @@ final class SyncStore {
         JSONObject result=new JSONObject(record.toString());
         result.put("anzahl",Math.max(0,result.optInt("count",result.optInt("anzahl",result.optInt("Anzahl",0)))));
         result.put("package",result.opt("pack")==null?result.optString("package",""):result.get("pack"));
-        result.put("comment",result.optString("comment",result.optString("kommentar",result.optString("Kommentar",""))));
+        result.put("comment",commentText(result));
         Object category="";java.util.Iterator<String> keys=result.keys();java.util.List<String> remove=new ArrayList<>();
         while(keys.hasNext()){String key=keys.next();if(key.equalsIgnoreCase("category")||key.equalsIgnoreCase("kategorie")){if(category.equals(""))category=result.opt(key);if(!key.equals("category"))remove.add(key);}}
         if(category instanceof JSONArray){JSONArray array=(JSONArray)category;List<String> values=new ArrayList<>();for(int i=0;i<array.length();i++)values.add(array.optString(i));category=String.join(", ",values);}
@@ -68,6 +68,12 @@ final class SyncStore {
         for(String key:new String[]{"count","pack","Anzahl","kommentar","Kommentar","modified"})result.remove(key);
         for(String key:remove)result.remove(key);
         return result;
+    }
+    static String commentText(JSONObject record) {
+        for(String key:new String[]{"comment","kommentar","Kommentar"}) {
+            if(record.has(key)) return record.isNull(key)?"":record.optString(key,"");
+        }
+        return "";
     }
     static JSONObject clean(JSONObject record) throws JSONException {
         JSONObject result=normalized(record);

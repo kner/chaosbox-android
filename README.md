@@ -187,6 +187,9 @@ Android 11+ requires all-files access.
 The small “(c) kner” button starts a manual, bidirectional SFTP synchronization
 for the selected profile. It receives validated history, records local edits,
 merges the current state and publishes immutable changes and media versions.
+It also publishes the current media under the server's `JPG/` folder using
+their original filenames and category subfolders. Conflicts retain the existing
+server copy until resolved; unrelated server files are preserved.
 Progress and errors remain visible; leaving the app cancels the transfer.
 Long press the button to resolve conflicts or restore deleted entries. The trash
 button deletes the selected entry; long press it to delete a whole JSON box.
