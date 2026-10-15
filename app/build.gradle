@@ -1,4 +1,14 @@
 plugins { id 'com.android.application' }
+def installationName = providers.gradleProperty('installationName').getOrElse('')
+if (installationName && !(installationName ==~ /[a-z][a-z0-9_]{0,39}/)) {
+    throw new GradleException('Invalid installationName')
+}
+// Derive a repeatable hue from the package suffix; updates retain their color.
+def iconDigest = java.security.MessageDigest.getInstance('SHA-256').digest(installationName.getBytes('UTF-8'))
+float iconHue = (((iconDigest[0] & 0xFF) << 8) | (iconDigest[1] & 0xFF)) / 65536.0f
+def iconColor = { float brightness ->
+    String.format('#%06X', java.awt.Color.HSBtoRGB(iconHue, 0.75f, brightness) & 0xFFFFFF)
+}
 android {
     // Historical copies are retained; compile only the canonical implementations.
     sourceSets.main.java.exclude '**/* (*in Konflikt stehende Kopie*).java'
@@ -17,6 +27,12 @@ android {
     }
     compileSdk 35
     defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 7; versionName '2.5' }
+    defaultConfig {
+        if (installationName) applicationIdSuffix ".installation.${installationName}"
+        resValue 'color', 'installation_icon_background', installationName ? iconColor(0.52f) : '#173F5F'
+        resValue 'color', 'installation_icon_accent', installationName ? iconColor(0.85f) : '#17A398'
+        manifestPlaceholders = [appLabel: installationName ? "ChaosBox (${installationName})" : 'ChaosBox']
+    }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     packaging { resources { excludes += ['META-INF/versions/**', 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'] } }
 }

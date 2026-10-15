@@ -190,6 +190,11 @@ merges the current state and publishes immutable changes and media versions.
 It also publishes the current media under the server's `JPG/` folder using
 their original filenames and category subfolders. Conflicts retain the existing
 server copy until resolved; unrelated server files are preserved.
+Set `Installation=<Desktop installation ID>` in `[SSH]` or `[SSH.ProfileName]`
+in `ChaosBox/Setup/setup.ini` to choose the Desktop installation. Its sync log
+shows the ID. Use `RemoteProfile=...` if the collection names differ. Android
+refuses the old shared default until an installation is selected; see
+`SYNC-PROTOCOL.md` for the isolated server paths.
 Progress and errors remain visible; leaving the app cancels the transfer.
 Long press the button to resolve conflicts or restore deleted entries. The trash
 button deletes the selected entry; long press it to delete a whole JSON box.
@@ -337,9 +342,28 @@ bash ./sign.sh
 ./upload-adb-release.sh
 ```
 
+Install a separate Debug app alongside the default app:
+
+```bash
+./upload-adb-debug.sh --installdir work SERIAL
+```
+
+This builds and installs `SSHCopy-debug-work.apk` as `ChaosBox (work)` with
+package ID `local.sshcopy.installation.work`. Repeat the same name to update
+that app while preserving its private data. Names start with a lowercase letter
+and contain only lowercase letters, digits and underscores (maximum 40 characters).
+The device serial is optional. `./build-apk.sh --installdir work` only builds it.
+Named installations get an icon color derived from their name; updates keep the
+same color. Adaptive launcher icons use this color on the Android home screen
+and in the app drawer, including round icons. The default app retains its original
+icon colors. Launcher themes may override app colors; disable themed icons to see
+the installation colors.
+Each app has separate private settings and permissions, but configured shared
+storage paths such as `ChaosBox/Setup/setup.ini` and image/data folders remain shared.
+
 `upload-adb.sh` remains a compatibility entry point for Debug.
-Both upload scripts install the existing APK from the project folder; they do
-not build or sign it. Pass a serial number, for example
+Without `--installdir`, both upload scripts install the existing APK from the
+project folder; they do not build or sign it. Pass a serial number, for example
 `./upload-adb-release.sh SERIAL`, to select a device.
 
 Enable USB debugging and authorize the computer on the phone. With multiple

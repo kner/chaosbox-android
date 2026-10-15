@@ -2,6 +2,17 @@
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
+installation=""
+gradle_args=()
+if (( $# )); then
+    if [[ $# != 2 || "$1" != "--installdir" || ! "$2" =~ ^[a-z][a-z0-9_]{0,39}$ ]]; then
+        echo "Verwendung: $0 [--installdir NAME] (NAME: a-z, dann a-z/0-9/_, max. 40 Zeichen)" >&2
+        exit 1
+    fi
+    installation="$2"
+    gradle_args+=("-PinstallationName=$installation")
+fi
+
 # Build a signed development APK using the system-wide toolchain.
 if [[ -z "${JAVA_HOME:-}" ]]; then
     for jdk in /usr/lib/jvm/java-21-openjdk-amd64 /usr/lib/jvm/java-17-openjdk-amd64; do
@@ -34,6 +45,7 @@ gradle="${GRADLE_HOME:-$default_gradle_home}/bin/gradle"
     echo "Fehler: Android SDK Platform 35 fehlt in $ANDROID_HOME." >&2
     exit 1
 }
-"$gradle" --no-daemon :app:assembleDebug :app:lintDebug --rerun-tasks
-cp -- app/build/outputs/apk/debug/app-debug.apk SSHCopy-debug.apk
-printf '\nDebug-APK: %s/SSHCopy-debug.apk\n' "$PWD"
+"$gradle" "${gradle_args[@]}" --no-daemon :app:assembleDebug :app:lintDebug --rerun-tasks
+apk="SSHCopy-debug${installation:+-$installation}.apk"
+cp -- app/build/outputs/apk/debug/app-debug.apk "$apk"
+printf '\nDebug-APK: %s/%s\n' "$PWD" "$apk"

@@ -12,3 +12,6 @@ app/src/main/assets/known_hosts
 # Ubuntu desktop runtime files
 __pycache__/
 *.pyc
+
+# Named Android debug installations
+/SSHCopy-debug-*.apk

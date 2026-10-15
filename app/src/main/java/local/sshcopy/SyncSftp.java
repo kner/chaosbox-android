@@ -187,13 +187,12 @@ final class SyncSftp {
         if(file.isFile())text=LocalData.read(file);else try(InputStream in=context.getAssets().open(Config.SETUP_ASSET)){ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buffer=new byte[8192];for(int n;(n=in.read(buffer))!=-1;)out.write(buffer,0,n);text=out.toString("UTF-8");}
         Map<String,String> result=new HashMap<>();result.put("host",Config.HOST);result.put("port",Integer.toString(Config.PORT));result.put("user",Config.USER);
         String profile=AppSettings.load(context).profile.id;
-        String remoteRoot=(profile.equalsIgnoreCase("chaosbox")||profile.equalsIgnoreCase("chaobox"))?"chaosbox-data":"chaosbox-data/profiles/"+profile.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_/-]","_");
-        result.put("datadestination",remoteRoot+"/TXT");result.put("imagedestination",Config.IMAGE_DESTINATION);
         Map<String,String> overrides=new HashMap<>();
         boolean active=false,specific=false;
         for(String line:text.split("\\r?\\n")){line=line.trim();if(line.startsWith("[")){active=line.equalsIgnoreCase("[SSH]");specific=line.equalsIgnoreCase("[SSH."+profile+"]");continue;}
             int equal=line.indexOf('=');if((active||specific)&&equal>0&&!line.startsWith(";")&&!line.startsWith("#")){String value=line.substring(equal+1).trim();if(value.startsWith("\"")&&value.endsWith("\""))value=value.substring(1,value.length()-1);(specific?overrides:result).put(line.substring(0,equal).trim().toLowerCase(Locale.ROOT),value);}}
         result.putAll(overrides);
+        SyncDestination.select(result,profile);
         return result;
     }
 }
