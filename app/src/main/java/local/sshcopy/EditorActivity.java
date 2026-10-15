@@ -89,6 +89,7 @@ public class EditorActivity extends Activity {
     private ProgressBar progress;
     private final List<String> categories = new ArrayList<>();
     private String createdAt;
+    private boolean syncNeedsReload;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
 
     @Override public void onCreate(Bundle state) {
@@ -163,6 +164,7 @@ public class EditorActivity extends Activity {
     }
 
     private void clearForm() {
+        syncNeedsReload=false;
         searchMode = false;
         beforeSearch = null;
         beforeSearchImage = null;
@@ -266,8 +268,9 @@ public class EditorActivity extends Activity {
         synchronize.setMinimumWidth(0);
         synchronize.setPadding(dp(10), 0, dp(10), 0);
         synchronize.setContentDescription("(c) kner – synchronize manually");
-        synchronize.setTooltipText("Upload saved files now");
+        synchronize.setTooltipText("Synchronize; long press to resolve conflicts");
         synchronize.setOnClickListener(v -> synchronizeManually());
+        synchronize.setOnLongClickListener(v -> { new android.app.AlertDialog.Builder(this).setTitle("Synchronization").setItems(new String[]{"Conflicts", "Deleted entries"}, (dialog, which) -> showSyncVersions(which == 1)).show(); return true; });
         header.addView(synchronize, new LinearLayout.LayoutParams(-2, dp(48)));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -276,6 +279,8 @@ public class EditorActivity extends Activity {
         search = icon(actions, android.R.drawable.ic_menu_search, "Search", v -> searchClicked());
         save = icon(actions, android.R.drawable.ic_menu_save, "Save data", v -> saveImage());
         save.setEnabled(true);
+        View deleteAction = icon(actions, android.R.drawable.ic_menu_delete, "Delete selected entry; long press to delete the whole JSON box", v -> deleteSelected());
+        deleteAction.setOnLongClickListener(v -> { deleteWholeBox(); return true; });
         setup = icon(actions, android.R.drawable.ic_menu_preferences, "Edit setup", v -> editSetup());
         root.addView(actions, matchWrap());
 
@@ -999,6 +1004,7 @@ public class EditorActivity extends Activity {
     }
 
     private void applyRecord(DeviceRecord record) {
+        syncNeedsReload=false;
         activeRecord = record;
         MetadataData values = record.values;
         createdAt = values.created;
@@ -1034,6 +1040,93 @@ public class EditorActivity extends Activity {
         runOnUiThread(() -> {
             setBusy(false);
             selectedLabel.setText(savedMessage + " — saved locally");
+        });
+    }
+
+    private void invalidateSynchronizedSelection() {
+        syncNeedsReload=activeRecord!=null||selectedUri!=null;
+        deviceRecords.clear();
+        device.dismissDropDown();
+        refreshDevices();
+    }
+
+    private void deleteSelected() {
+        if (syncNeedsReload) { Toast.makeText(this,"Reopen the selected entry after synchronization before deleting.",Toast.LENGTH_LONG).show();return; }
+        if (busy) return;
+        final File file;
+        try { file = activeRecord != null ? activeRecord.source : selectedUri == null ? null : existingMedia(selectedUri); }
+        catch (IOException e) { Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show(); return; }
+        int index = activeRecord != null && !activeRecord.image ? activeRecord.recordIndex : -1;
+        if (file == null) { Toast.makeText(this, "Select a saved record or media file first.", Toast.LENGTH_LONG).show(); return; }
+        new android.app.AlertDialog.Builder(this).setTitle("Delete selected entry?")
+            .setMessage("The entry moves to the local trash. The deletion is propagated during synchronization. Other box records and related media remain unchanged.")
+            .setNegativeButton("Cancel", null).setPositiveButton("Delete", (dialog, which) -> {
+                setBusy(true);
+                worker.execute(() -> {
+                    try {
+                        SyncStore store = SyncSftp.store(selection.paths);
+                        try (AutoCloseable lock = store.lock()) { store.delete(file, index); }
+                        rebuildIndex();
+                        runOnUiThread(() -> { setBusy(false); clearForm(); selectedLabel.setText("Deleted locally; synchronize to propagate."); });
+                    } catch (Exception e) { runOnUiThread(() -> { setBusy(false); Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show(); }); }
+                });
+            }).show();
+    }
+
+    private void deleteWholeBox() {
+        if (syncNeedsReload) { Toast.makeText(this,"Reopen the selected entry after synchronization before deleting.",Toast.LENGTH_LONG).show();return; }
+        if (busy || activeRecord == null || activeRecord.image || activeRecord.source == null) return;
+        File file = activeRecord.source;
+        new android.app.AlertDialog.Builder(this).setTitle("Delete whole box?")
+            .setMessage("Delete all JSON records in this file? Related images and videos remain unchanged. The deletion propagates during synchronization.")
+            .setNegativeButton("Cancel",null).setPositiveButton("Delete box",(dialog,which)->{
+                setBusy(true);worker.execute(()->{
+                    try {
+                        SyncStore store=SyncSftp.store(selection.paths);
+                        try(AutoCloseable lock=store.lock()){store.deleteBox(file);}
+                        rebuildIndex();runOnUiThread(()->{setBusy(false);clearForm();selectedLabel.setText("Box deleted locally; synchronize to propagate.");});
+                    }catch(Exception e){runOnUiThread(()->{setBusy(false);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}
+                });
+            }).show();
+    }
+
+    private void showSyncVersions(boolean trash) {
+        if (busy) return;
+        worker.execute(() -> {
+            try {
+                SyncStore store = SyncSftp.store(selection.paths);
+                java.util.List<JSONObject> choices = new java.util.ArrayList<>();
+                java.util.Map<String,JSONObject> operations=store.operations();
+                for (java.util.List<JSONObject> heads : store.heads(operations).values()) {
+                    if (!trash && heads.size()>1 && !heads.get(0).getString("kind").equals("device")) choices.addAll(heads);
+                    if (trash && heads.size()==1 && heads.get(0).getString("action").equals("delete")) {
+                        String id=heads.get(0).getString("id");
+                        for(JSONObject op:operations.values()) if(op.getString("id").equals(id)&&op.getString("action").equals("put"))choices.add(op);
+                    }
+                }
+                String[] labels = new String[choices.size()];
+                for(int i=0;i<labels.length;i++) {
+                    JSONObject op=choices.get(i);
+                    labels[i]=op.getString("action")+" · "+op.getString("path")+" · "+op.optString("issued_at", "")+" · "+(op.optJSONObject("record")==null?"":op.getJSONObject("record").optString("comment", ""))+" · "+op.getString("revision");
+                }
+                runOnUiThread(() -> {
+                    if (labels.length==0) { Toast.makeText(this,trash ? "No deleted entries." : "No synchronization conflicts.",Toast.LENGTH_LONG).show();return; }
+                    new android.app.AlertDialog.Builder(this).setTitle(trash ? "Choose a version to restore" : "Choose the version to keep")
+                        .setItems(labels,(dialog,which)-> new android.app.AlertDialog.Builder(this).setTitle(trash ? "Restore this version?" : "Resolve conflict?")
+                            .setMessage("Keep this version and supersede all other versions of the same object? All payloads remain in the journal.\n\n" + choices.get(which).toString())
+                            .setNegativeButton("Cancel",null).setPositiveButton("Keep version",(confirmation,button)->{
+                                setBusy(true);
+                                worker.execute(()->{
+                                    try {
+                                        JSONObject chosen=choices.get(which);
+                                        try(AutoCloseable lock=store.lock()){if(trash)store.restore(chosen.getString("id"),chosen.getString("revision"));else store.resolve(chosen.getString("id"),chosen.getString("revision"));}
+                                        rebuildIndex();
+                                        runOnUiThread(()->{setBusy(false);invalidateSynchronizedSelection();selectedLabel.setText("Version selected locally; synchronize to propagate.");});
+                                    }catch(Exception e){runOnUiThread(()->{setBusy(false);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}
+                                });
+                            }).show()).setNegativeButton("Close",null).show();
+                });
+            } catch(Exception e) {runOnUiThread(()->Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show());}
         });
     }
 
@@ -1073,7 +1166,7 @@ public class EditorActivity extends Activity {
             String failure = null;
             try {
                 rebuildIndex();
-                upload.copy();
+                try { upload.copy(); } finally { rebuildIndex(); }
             } catch (Exception e) {
                 failure = "Synchronization failed:\n" + UploadErrors.describe(e)
                         + "\nLocal files are retained. Tap (c) kner to try again.";
@@ -1083,11 +1176,13 @@ public class EditorActivity extends Activity {
                 if (isDestroyed()) return;
                 activeUpload = null;
                 setBusy(false);
+                invalidateSynchronizedSelection();
                 if (error != null) {
                     log.append("\n" + error + "\n");
                     dialog.setTitle("Synchronization failed");
                     selectedLabel.setText(error);
                 } else {
+                    invalidateSynchronizedSelection();
                     dialog.setTitle("Synchronization completed");
                     selectedLabel.setText("Manual synchronization completed.");
                 }
@@ -1294,6 +1389,7 @@ public class EditorActivity extends Activity {
     }
 
     private void openImage(Uri imageUri, String label) {
+        syncNeedsReload=false;
         selectedImages.clear();
         selectedImages.add(imageUri);
         deviceRecords.clear();
@@ -1351,6 +1447,7 @@ public class EditorActivity extends Activity {
     }
 
     private void saveImage() {
+        if (syncNeedsReload) { Toast.makeText(this,"The shared data may have changed. Reopen the entry before saving; your form values remain here.",Toast.LENGTH_LONG).show();return; }
         if (searchMode || busy) return;
         if (!hasStorageAccess()) {
             requestStorageAccess();
@@ -1384,7 +1481,9 @@ public class EditorActivity extends Activity {
         setBusy(true);
         worker.execute(() -> {
             int completed = 0;
-            try {
+            try (AutoCloseable syncLock = SyncSftp.store(selection.paths).lock()) {
+                SyncStore syncStore = SyncSftp.store(selection.paths);
+                syncStore.capture();
                 try (InputStream ignored = openOrCreateSetupFile()) { }
                 AppSettings.Selection updated = AppSettings.rememberCategory(this, selection, selectedCategory);
                 runOnUiThread(() -> {
@@ -1401,6 +1500,7 @@ public class EditorActivity extends Activity {
                             : BoxRecords.filename(boxName);
                     int preferredIndex = editingBox ? originalRecord.recordIndex : -1;
                     File saved = BoxRecords.save(directory, filename, userComment, preferredIndex);
+                    syncStore.capture();
                     List<JSONObject> records = BoxRecords.load(directory, saved.getName());
                     List<DeviceRecord> choices = new ArrayList<>();
                     String savedDevice = new JSONObject(userComment).optString("device", "");
@@ -1428,22 +1528,35 @@ public class EditorActivity extends Activity {
                 for (int i = 0; i < images.size(); i++) {
                     Uri source = images.get(i);
                     File existing = existingMedia(source);
+                    JSONObject mediaValues = new JSONObject(userComment);
+                    if (existing != null) {
+                        String relative = selection.paths.images.toPath().relativize(existing.toPath()).toString().replace(File.separatorChar, '/');
+                        for (java.util.List<JSONObject> ops : syncStore.heads(syncStore.operations()).values()) {
+                            for (JSONObject op : ops) if (op.getString("kind").equals("media") && op.getString("path").equals(relative) && op.getString("action").equals("put")) {
+                                mediaValues.put("id", op.getString("id"));
+                                mediaValues.put("revision", op.getString("revision"));
+                            }
+                        }
+                    } else mediaValues.put("id", java.util.UUID.randomUUID().toString());
+                    String mediaComment = mediaValues.toString();
                     Uri saved;
                     long savedBytes;
                     if (isVideo(source)) {
-                        saved = saveVideo(source, existing, userComment, selectedCategory);
+                        saved = saveVideo(source, existing, mediaComment, selectedCategory);
                         savedBytes = new File(saved.getPath()).length();
                     } else if (existing != null) {
                         byte[] result = ImageProcessor.process(new java.io.FileInputStream(existing),
-                                userComment, selection.config.imageLimit);
+                                mediaComment, selection.config.imageLimit);
                         saved = overwriteJpg(existing, result);
                         savedBytes = result.length;
                     } else {
                         byte[] result = ImageProcessor.process(getContentResolver().openInputStream(source),
-                                userComment, selection.config.imageLimit);
+                                mediaComment, selection.config.imageLimit);
                         saved = writeOutput(result, outputName(queryName(source)), selectedCategory);
                         savedBytes = result.length;
                     }
+                    syncStore.capture();
+                    syncStore.embedMedia(new File(saved.getPath()));
                     images.set(i, saved);
                     completed++;
                     totalBytes += savedBytes;

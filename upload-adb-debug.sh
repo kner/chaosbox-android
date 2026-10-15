@@ -15,6 +15,8 @@ apk="$PWD/SSHCopy-debug.apk"
 [[ -f "$apk" ]] || { echo "Fehler: APK fehlt. Zuerst ./build-apk.sh ausführen." >&2; exit 1; }
 if command -v adb >/dev/null 2>&1; then
     adb_bin="$(command -v adb)"
+elif [[ -x "$PWD/.tooling/android-sdk/platform-tools/adb" ]]; then
+    adb_bin="$PWD/.tooling/android-sdk/platform-tools/adb"
 elif [[ -x "${ANDROID_HOME:-/opt/android-sdk}/platform-tools/adb" ]]; then
     adb_bin="${ANDROID_HOME:-/opt/android-sdk}/platform-tools/adb"
 else
@@ -37,5 +39,8 @@ if ! state="$("$adb_bin" -s "$serial" get-state)" || [[ "$state" != "device" ]];
     exit 1
 fi
 # Update in place; preserve app data. Do not start the automatic SSH transfer.
-"$adb_bin" -s "$serial" install -r "$apk"
+if ! "$adb_bin" -s "$serial" install -r "$apk"; then
+    echo "Update fehlgeschlagen. Bei INSTALL_FAILED_UPDATE_INCOMPATIBLE muss die APK mit dem ursprünglichen Schlüssel signiert werden. Nicht deinstallieren, wenn die App-Daten erhalten bleiben sollen." >&2
+    exit 1
+fi
 echo "Debug-APK auf $serial installiert."

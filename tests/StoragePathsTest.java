@@ -26,6 +26,9 @@ public final class StoragePathsTest {
             check(StoragePaths.categoryFolder("Elektronik > Stromversorgung").equals("elektronik"), "Image category");
             Files.createDirectories(paths.images.toPath());
             Files.createDirectories(paths.data.toPath());
+            Files.createDirectories(paths.data.toPath().resolve(".chaosbox-sync/trash"));
+            Files.write(paths.data.toPath().resolve(".chaosbox-sync/trash/deleted.json"), "[]".getBytes(StandardCharsets.UTF_8));
+            check(StoragePaths.files(paths.data, false).isEmpty(), "Sync trash must never become a JSON source");
             byte[] picture = new byte[]{1, 2, 3};
             File image = new File(paths.images, "photo.jpg");
             Files.write(image.toPath(), picture);

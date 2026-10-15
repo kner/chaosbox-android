@@ -12,6 +12,9 @@ public final class DataIndexTest {
         try {
             Files.createDirectories(root.resolve("JPG/sub"));
             Files.createDirectories(root.resolve("boxes"));
+            Files.createDirectories(root.resolve("boxes/.chaosbox-sync/trash"));
+            Files.write(root.resolve("boxes/.chaosbox-sync/conflicts.json"), "not a source file".getBytes(StandardCharsets.UTF_8));
+            Files.write(root.resolve("boxes/.chaosbox-sync/trash/old.json"), "[{\"device\":\"deleted\"}]".getBytes(StandardCharsets.UTF_8));
             Files.write(root.resolve("JPG/sub/photo.JPG"), new byte[]{1});
             Files.createSymbolicLink(root.resolve("JPG/link.jpg"), root.resolve("JPG/sub/photo.JPG"));
             Files.write(root.resolve("boxes/Box7.json"), ("[{\"device\":\"Sensor\",\"anzahl\":2,\"comment\":\"Grüße\"},"

@@ -1,16 +1,12 @@
 # ChaosBox — Android and Ubuntu apps
 
-## Ubuntu 24.04 desktop app
+## Reference and synchronization
 
-The native desktop version lives in [`desktop/`](desktop/README.md). Start it with
-`./run-desktop.sh`, or run `./install-desktop.sh` to install **ChaosBox Desktop**
-in the Ubuntu application menu. It uses `~/ChaosBox/JPG`, `~/ChaosBox/boxes`,
-and `~/ChaosBox/Setup/setup.ini` by default.
-
-The desktop version includes batch media editing, JPG and MP4 metadata, JSON
-records, profiles, automatic category additions, regex search, text snippets,
-full-screen image zoom and manual SSH upload. See the desktop documentation for
-dependencies, shortcuts and configuration. The sections below describe Android.
+The reference desktop application is the sibling `chaosbox-desktop` project.
+Android and Desktop now share IDs, revisions, XMP and a transport-independent
+change journal. The read-only `chaosbox-kner-at` viewer understands this journal.
+See [SYNC-PROTOCOL.md](SYNC-PROTOCOL.md) for configuration, deletion, recovery,
+profile mapping and deployment. The common server root is `chaosbox-data`.
 
 ## English interface and form actions
 
@@ -188,17 +184,13 @@ Newly imported images with duplicate names receive numbered filenames.
 Android 11+ requires all-files access.
 
 “Save” saves locally only and does not start synchronization.
-The small “(c) kner” button below the profile title starts a manual upload for
-the selected profile. Only files that have already been saved are transferred.
-A dialog displays progress and stays open on errors with the full message
-(operation, filename/destination, and cause). After an error, the same button
-can be used to retry. The form is disabled during transfer. “Cancel” or leaving
-the app stops the transfer; there is no background service or automatic retry.
-Uploads are written to temporary server files first and renamed only after
-the transfer is complete. A dropped connection may leave a `.upload` file on
-the server; it is not a JPG/JSON source file. The server must support renaming
-over existing files; otherwise, an SFTP error is displayed and the previous
-server file is preserved.
+The small “(c) kner” button starts a manual, bidirectional SFTP synchronization
+for the selected profile. It receives validated history, records local edits,
+merges the current state and publishes immutable changes and media versions.
+Progress and errors remain visible; leaving the app cancels the transfer.
+Long press the button to resolve conflicts or restore deleted entries. The trash
+button deletes the selected entry; long press it to delete a whole JSON box.
+Box deletion leaves related media unchanged. No background synchronization runs.
 
 “Open JSON” loads `ChaosBox/boxes/<Box>.json` using the Box field (with an optional
 `.json` extension). Input is case-insensitive: `A11` opens and saves `a11.json`;
@@ -214,20 +206,16 @@ record, an existing Device is updated or a new Device is created. Additional JSO
 fields and the original creation date are preserved; count/anzahl and pack/package
 are kept consistent when updating.
 
-Manual uploads preserve the subfolders of JPG and boxes. Missing server
-destination folders are created automatically, including all parent folders.
-Each created folder appears in the upload log. Missing write permissions and
-other server errors are shown in the dialog.
-Transfers run only from the APK to the server and only for files within
-`/storage/emulated/0/ChaosBox`. Other profile folders, such as `Bilderbox`,
-are not uploaded. There are no downloads, no synchronization back to the APK,
-and no propagation of deletions between the app and server.
-Images from JPG and JSON files from boxes are uploaded to the configured server
-destination if they are missing there or newer locally. Server files with the
-same or a newer timestamp are preserved. Modification times are compared in
-whole seconds; after upload, the local modification time is applied to the
-server file. Server settings remain in Config.java; the SSH key and known_hosts
-remain in the app's private storage.
+Synchronization preserves relative paths. Missing files are not deletions;
+use the deletion actions so that tombstones can propagate. Concurrent edits and
+deletions are retained as explicit conflicts. Each profile has its own local
+journal; non-ChaosBox profiles use a separate default server subtree.
+
+SSH Host, Port, User and DataDestination can be overridden in `[SSH]` or
+`[SSH.ProfileName]` in setup.ini. The default main-profile destination is
+`chaosbox-data/TXT/.chaosbox-sync`. Private keys and known-hosts files remain in
+private app storage. Only ops and blobs are exchanged; local configuration,
+identity, trash and indexes are excluded. See the shared protocol document.
 
 ## Build and installation
 
@@ -260,7 +248,7 @@ Opening the app and saving records never start an upload. Tap the small
 “(c) kner” button to upload saved files from the selected profile. The transfer
 dialog displays progress and persistent error details. Keep the app open;
 leaving it cancels the transfer. Retry explicitly using the same button.
-Transfers use SFTP over SSH and preserve newer or unchanged server files.
+The current bidirectional protocol is described in SYNC-PROTOCOL.md; older timestamp-based upload rules below are historical.
 Only completed temporary uploads are renamed to their final server filenames.
 
 ## Hardcoded settings
@@ -320,7 +308,11 @@ builds, lints, and copies the result to `SSHCopy-debug.apk`. The local Gradle
 cache is `.tooling/gradle-user-home`; `local.properties` points to the local SDK.
 `ANDROID_HOME`, `GRADLE_HOME`, and `GRADLE_USER_HOME` can override these defaults.
 Without the local toolchain, the script falls back to `/opt/android-sdk` and
-`/opt/gradle-8.11.1`. The original debug signing key remains in `~/.android`.
+`/opt/gradle-8.11.1`. Debug builds use the original development key in
+`.tooling/android-user/debug.keystore` when present, matching the existing phone
+installation. Keep a secure backup of this ignored file: future updates must
+use the same signing key. Without it, Gradle falls back to `~/.android/debug.keystore`,
+whose certificate may differ.
 
 File-selection regression check:
 
@@ -366,12 +358,12 @@ INI parsing is not implemented yet; connection settings still come from Config.j
 Use “Edit setup.ini” to edit and save setup.ini directly in the app.
 The categories are reloaded afterward.
 
-## Upload destinations since 2.5
+## Current synchronization destination
 
-Images from ChaosBox/JPG go to `storage/app/exif/jpg`, and JSON files from
-ChaosBox/boxes go to `storage/app/exif/data`, both relative to the SFTP starting
-directory. Both server folders must exist and be writable. Missing files and
-files that are newer locally are transferred.
+The main profile shares `chaosbox-data` with Desktop and the website. The journal
+is below `chaosbox-data/TXT/.chaosbox-sync`; materialized images remain under the
+local profile's JPG folder. Do not use the historical storage/app/exif targets
+for a current shared data set. Connection overrides are described above.
 
 ## Shared data file and search
 
@@ -424,7 +416,7 @@ Kategorie=Fotos, Gemälde, Dokumente
 Tapping the title opens the profile picker. The selection persists across app
 restarts. Switching profiles resets the open form and uses the selected profile's
 image and JSON folders. Save any unsaved changes first. Profile switching is
-disabled during uploads. The configured server destination paths remain shared.
+disabled during synchronization. Each profile has a separate default server subtree; explicit overrides must identify the same data set on every device.
 
 `JPG` (alternatively `Bilder`) and `Daten` can be relative to shared internal
 storage or absolute. Profiles require separate folders. Only JPG files are
@@ -484,3 +476,15 @@ as a setup error.
 
 For existing installations, a missing section is automatically added with the
 two examples. An existing section, even if empty, is preserved.
+
+## Synchronization tests
+
+After building the APK, supply an installed org.json JAR for JVM tests:
+
+```sh
+/usr/bin/python3 tests/test-sync.py --json-jar /path/to/org.json.jar
+/usr/bin/python3 tests/test-sftp.py --json-jar /path/to/org.json.jar
+```
+
+The second test uses an ephemeral localhost SFTP server and temporary keys;
+it never connects to the configured production server.

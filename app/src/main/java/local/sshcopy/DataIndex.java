@@ -70,6 +70,9 @@ final class DataIndex {
             Path[] files = paths.filter(p -> Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS))
                     .sorted().toArray(Path[]::new);
             for (Path path : files) {
+                boolean hidden = false;
+                for (Path part : folder.toPath().relativize(path)) if (part.toString().startsWith(".")) hidden = true;
+                if (hidden) continue;
                 String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
                 if (images ? !(name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".mp4")) : !name.endsWith(".json")) continue;
                 collectFile(path, images, reader, entries);

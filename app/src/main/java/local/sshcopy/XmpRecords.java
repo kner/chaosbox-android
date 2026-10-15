@@ -17,7 +17,7 @@ final class XmpRecords {
     private static final String DC = "http://purl.org/dc/elements/1.1/";
     private static final String XMP = "http://ns.adobe.com/xap/1.0/";
     private static final byte[] HEADER = "http://ns.adobe.com/xap/1.0/\0".getBytes(StandardCharsets.US_ASCII);
-    private static final String[] FIELDS = {"box", "anzahl", "device", "alias", "category", "package", "comment", "created"};
+    private static final String[] FIELDS = {"box", "anzahl", "device", "alias", "category", "package", "comment", "created", "id", "revision", "base_revision"};
     private static String ns(String field) { return field.equals("comment") ? DC : field.equals("created") ? XMP : NS; }
     private static String name(String field) { return field.equals("comment") ? "description" : field.equals("created") ? "CreateDate" : field; }
 
@@ -108,6 +108,7 @@ final class XmpRecords {
             if(description==null) throw new IOException("Missing XMP RDF description");
             JSONObject record=new JSONObject(json);
             for(String field : FIELDS) {
+                if ((field.equals("id") || field.equals("revision") || field.equals("base_revision")) && !record.has(field)) continue;
                 remove(d,ns(field),name(field));
                 String prefix=field.equals("comment")?"dc":field.equals("created")?"xmp":"chaosbox";
                 Element property=d.createElementNS(ns(field),prefix+":"+name(field));

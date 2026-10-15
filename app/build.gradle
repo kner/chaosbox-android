@@ -3,6 +3,18 @@ android {
     // Historical copies are retained; compile only the canonical implementations.
     sourceSets.main.java.exclude '**/* (*in Konflikt stehende Kopie*).java'
     namespace 'local.sshcopy'
+    // Retain the original development certificate so installed copies can update.
+    signingConfigs {
+        debug {
+            def originalDebugKey = rootProject.file('.tooling/android-user/debug.keystore')
+            if (originalDebugKey.isFile()) {
+                storeFile originalDebugKey
+                storePassword 'android'
+                keyAlias 'androiddebugkey'
+                keyPassword 'android'
+            }
+        }
+    }
     compileSdk 35
     defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 7; versionName '2.5' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }

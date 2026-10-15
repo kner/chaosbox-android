@@ -12,6 +12,16 @@ import org.json.JSONTokener;
 import org.json.JSONException;
 
 final class BoxRecords {
+    static int compareKeys(String left, String right) {
+        int a=0,b=0;
+        while(a<left.length()&&b<right.length()) {
+            int x=left.codePointAt(a),y=right.codePointAt(b);
+            if(x!=y)return Integer.compare(x,y);
+            a+=Character.charCount(x);b+=Character.charCount(y);
+        }
+        return Integer.compare(left.length()-a,right.length()-b);
+    }
+
     static void validateName(String name) throws IOException {
         if (name.trim().isEmpty() || name.contains("/") || name.contains("\\")
                 || name.matches(".*[\\p{Cntrl}].*")) {
@@ -45,11 +55,13 @@ final class BoxRecords {
                 if (object.has("device") || object.has("box") || object.has("comment")
                         || object.has("anzahl") || object.has("category") || object.has("alias")
                         || object.has("package") || object.has("count") || object.has("pack")
-                        || object.has("created") || object.has("modified")) {
+                        || object.has("created") || object.has("modified") || object.has("id") || object.has("revision")) {
                     records.add(object);
                 } else {
-                    java.util.Iterator<String> keys = object.keys();
-                    while (keys.hasNext()) records.add(object.getJSONObject(keys.next()));
+                    java.util.List<String> keys = new java.util.ArrayList<>();
+                    object.keys().forEachRemaining(keys::add);
+                    keys.sort(BoxRecords::compareKeys);
+                    for (String key : keys) records.add(object.getJSONObject(key));
                 }
             } else {
                 throw new JSONException("Objekt oder Array erwartet");
@@ -126,7 +138,10 @@ final class BoxRecords {
                     if (existing.has("pack")) existing.put("pack", pack);
                     if (existing.has("package")) existing.put("package", pack);
                 }
-            } else records.put(incoming);
+            } else {
+                if (!incoming.has("id")) incoming.put("id", java.util.UUID.randomUUID().toString());
+                records.put(incoming);
+            }
             for (int i = 0; i < records.length(); i++) records.getJSONObject(i).remove("modified");
             Path temporary = Files.createTempFile(directory.toPath(), ".box-", ".tmp");
             try {

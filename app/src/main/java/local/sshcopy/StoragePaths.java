@@ -99,6 +99,7 @@ final class StoragePaths {
             throw new IOException("Kein Datenordner: " + root);
         try (Stream<Path> paths = Files.walk(root.toPath())) {
             paths.filter(f -> Files.isRegularFile(f, LinkOption.NOFOLLOW_LINKS)).sorted().forEach(f -> {
+                for (Path part : root.toPath().relativize(f)) if (part.toString().startsWith(".")) return;
                 String name = f.getFileName().toString().toLowerCase(Locale.ROOT);
                 if (image ? name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".mp4") : name.endsWith(".json"))
                     result.add(f.toFile());

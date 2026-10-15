@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Actual JSch/Paramiko SFTP exchange against an ephemeral localhost-only server."""
+import argparse,errno,json,os,socket,subprocess,sys,tempfile,threading
+from pathlib import Path
+import paramiko
+p=argparse.ArgumentParser();p.add_argument('--json-jar',required=True,type=Path);p.add_argument('--desktop',type=Path);a=p.parse_args()
+ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0,str(a.desktop or ROOT.parent/'chaosbox-desktop'))
+from chaos_sync import Store,atomic
+from sync_transport import sftp_exchange,sftp_connection,valid_manifest
+
+operation_reads=[]
+
+class Auth(paramiko.ServerInterface):
+    def __init__(self,key):self.key=key
+    def check_auth_publickey(self,user,key):return paramiko.AUTH_SUCCESSFUL if user=='tester' and key==self.key else paramiko.AUTH_FAILED
+    def get_allowed_auths(self,user):return 'publickey'
+    def check_channel_request(self,kind,channel):return paramiko.OPEN_SUCCEEDED if kind=='session' else paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
+class Server(paramiko.SFTPServerInterface):
+    def __init__(self,server,*args,root,**kwargs):super().__init__(server,*args,**kwargs);self.root=root
+    def path(self,path):
+        result=(self.root/path.lstrip('/')).resolve()
+        if not result.is_relative_to(self.root):raise PermissionError(errno.EACCES,'outside root')
+        return result
+    def canonicalize(self,path):return '/'+str(self.path(path).relative_to(self.root)).replace('\\','/').replace('/.','') if path not in ('.','/') else '/'
+    def stat(self,path):
+        try:return paramiko.SFTPAttributes.from_stat(self.path(path).stat())
+        except OSError as e:return paramiko.SFTPServer.convert_errno(e.errno)
+    lstat=stat
+    def list_folder(self,path):
+        try:
+            result=[]
+            for file in self.path(path).iterdir():
+                attrs=paramiko.SFTPAttributes.from_stat(file.stat());attrs.filename=file.name;result.append(attrs)
+            return result
+        except OSError as e:return paramiko.SFTPServer.convert_errno(e.errno)
+    def open(self,path,flags,attr):
+        if path.endswith('.op') and not flags&(os.O_WRONLY|os.O_RDWR):operation_reads.append(path)
+        try:
+            fd=os.open(self.path(path),flags,0o600);mode='r+b' if flags&os.O_RDWR else 'wb' if flags&os.O_WRONLY else 'rb'
+            stream=os.fdopen(fd,mode);handle=paramiko.SFTPHandle(flags);handle.readfile=stream;handle.writefile=stream;return handle
+        except OSError as e:return paramiko.SFTPServer.convert_errno(e.errno)
+    def mkdir(self,path,attr):return self.change(lambda:self.path(path).mkdir())
+    def rmdir(self,path):return self.change(lambda:self.path(path).rmdir())
+    def remove(self,path):return self.change(lambda:self.path(path).unlink())
+    def rename(self,old,new):return self.change(lambda:self.path(old).rename(self.path(new)))
+    def change(self,action):
+        try:action();return paramiko.SFTP_OK
+        except OSError as e:return paramiko.SFTPServer.convert_errno(e.errno)
+
+with tempfile.TemporaryDirectory(prefix='chaosbox-local-sftp-') as temporary:
+    folder=Path(temporary);server_root=folder/'server';server_root.mkdir()
+    key=paramiko.RSAKey.generate(2048);host=paramiko.RSAKey.generate(2048);keypath=folder/'key';key.write_private_key_file(str(keypath))
+    listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(.2);port=listener.getsockname()[1]
+    hosts=folder/'known_hosts';hosts.write_text(f'[127.0.0.1]:{port} ssh-rsa {host.get_base64()}\n')
+    stop=threading.Event();connections=[]
+    def serve():
+        while not stop.is_set():
+            try:connection,_=listener.accept()
+            except socket.timeout:continue
+            transport=paramiko.Transport(connection);connections.append(transport);transport.add_server_key(host)
+            transport.set_subsystem_handler('sftp',paramiko.SFTPServer,Server,root=server_root)
+            transport.start_server(server=Auth(key))
+    thread=threading.Thread(target=serve,daemon=True);thread.start()
+    classes=ROOT/'app/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes'
+    android=ROOT/'.tooling/android-sdk/platforms/android-35/android.jar'
+    jsch=next((ROOT/'.tooling/gradle-user-home/caches').rglob('jsch-2.28.0.jar'))
+    classpath=f'{classes}:{a.json_jar}:{android}:{jsch}'
+    subprocess.run(['javac','-cp',classpath,'-d',str(folder),str(ROOT/'tests/SftpSyncTest.java')],check=True)
+    first,second=folder/'android',folder/'desktop'
+    atomic(first/'TXT/box.json','[{"device":"one","comment":"SFTP Grüße 東京"}]')
+    store=Store(second/'JPG',second/'TXT')
+    def java():
+        result=subprocess.check_output(['java','-cp',f'{folder}:{classpath}','local.sshcopy.SftpSyncTest',str(first),str(port),str(keypath),str(hosts)],text=True).strip()
+        assert result=='0',result
+        remote_index=json.loads((server_root/'shared/.chaosbox-sync/checksums.json').read_text())
+        assert valid_manifest(remote_index)
+        assert remote_index['checksum']==json.loads((first/'TXT/.chaosbox-sync/checksums.json').read_text())['checksum']
+    def python():
+        config=dict(host='127.0.0.1',port=port,user='tester',keyfile=str(keypath),knownhosts=str(hosts))
+        with sftp_connection(config,threading.Event(),progress=lambda _:None) as sftp:
+            sftp_exchange(store,sftp,'shared/.chaosbox-sync',progress=lambda _:None)
+        store.apply()
+        remote_index=json.loads((server_root/'shared/.chaosbox-sync/checksums.json').read_text())
+        assert valid_manifest(remote_index) and remote_index['checksum']==store.checksums()['checksum']
+    try:
+        java();python();assert json.loads((second/'TXT/box.json').read_text())[0]['comment']=='SFTP Grüße 東京'
+        operation_reads.clear();python();assert not operation_reads,operation_reads
+        store.delete(second/'TXT/box.json',0);python();java()
+        operation_reads.clear();java();assert not operation_reads,operation_reads
+        assert json.loads((first/'TXT/box.json').read_text())==[]
+        assert not (server_root/'shared/.chaosbox-sync/transfer.lock').exists()
+        assert (server_root/'shared/.chaosbox-sync/.htaccess').read_text()=='Require all denied\n'
+        print('PASS: actual JSch ↔ Paramiko SFTP, strict host verification, Unicode, deletion propagation, device ACKs, identical checksums, zero unchanged operation downloads and lock cleanup')
+    finally:
+        stop.set();thread.join(2);listener.close()
+        for connection in connections:connection.close()

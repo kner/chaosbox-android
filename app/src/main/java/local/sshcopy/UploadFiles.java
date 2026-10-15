@@ -17,11 +17,13 @@ final class UploadFiles {
     private final Consumer<String> log;
     private volatile boolean cancelled;
     private volatile Session activeSession;
+    private volatile ChannelSftp activeChannel;
 
     void cancel() {
         cancelled = true;
         Session connection = activeSession;
-        if (connection != null) connection.disconnect();
+        // Once SFTP is open, progress callbacks abort transfers while finally releases the journal lock.
+        if (connection != null && activeChannel == null) connection.disconnect();
     }
 
     private void checkCancelled() throws IOException {
@@ -55,120 +57,29 @@ final class UploadFiles {
     }
 
     synchronized void copy() throws IOException {
-        Session session = null;
-        ChannelSftp sftp = null;
-        int copied = 0;
-        int skipped = 0;
-        String stage = "Prepare local files";
+        Session session=null; ChannelSftp sftp=null;
         try {
             checkCancelled();
-            show("Starting synchronization.");
-            java.util.Map<File, String> files = new java.util.LinkedHashMap<>();
-            for (File file : paths.imageFiles()) {
-                if (!paths.canUpload(file)) continue;
-                String subfolder = remoteSubfolder(file, paths.images, paths.legacyImages);
-                files.put(file, Config.IMAGE_DESTINATION + subfolder);
-            }
-            for (File file : paths.jsonFiles()) {
-                if (!paths.canUpload(file)) continue;
-                String subfolder = remoteSubfolder(file, paths.data, paths.legacyData);
-                files.put(file, Config.JSON_DESTINATION + subfolder);
-            }
-            java.util.Set<String> targets = new java.util.HashSet<>();
-            for (java.util.Map.Entry<File, String> entry : files.entrySet()) {
-                if (!targets.add(entry.getValue() + "/" + entry.getKey().getName()))
-                    throw new IOException("Multiple local files have the same upload destination: " + entry.getKey().getName());
-            }
-            if (files.isEmpty()) { show("No files to upload."); return; }
-            checkCancelled();
-            stage = "Load SSH credentials";
-            Security.removeProvider("BC");
-            Security.addProvider(new BouncyCastleProvider());
-            JSch ssh = new JSch();
-            ssh.setKnownHosts(credential(Config.KNOWN_HOSTS_FILE).getAbsolutePath());
-            ssh.addIdentity(credential(Config.KEY_FILE).getAbsolutePath());
-            session = ssh.getSession(Config.USER, Config.HOST, Config.PORT);
-            activeSession = session;
-            checkCancelled();
-            session.setConfig("StrictHostKeyChecking", "yes");
-            session.setConfig("PreferredAuthentications", "publickey");
-            session.setTimeout(30000);
-            stage = "Connect via SSH to " + Config.HOST + ":" + Config.PORT + " ";
-            show(stage);
-            session.connect(15000);
-            checkCancelled();
-            stage = "Open SFTP connection";
-            sftp = (ChannelSftp) session.openChannel("sftp");
-            sftp.connect(15000);
-            String remoteHome = sftp.pwd();
-            String currentDestination = null;
-            for (java.util.Map.Entry<File, String> entry : files.entrySet()) {
+            SyncStore store=SyncSftp.store(paths);
+            try (AutoCloseable ignored=store.lock()) {
+                java.util.Map<String,String> config=SyncSftp.settings(context);
+                Security.removeProvider("BC");Security.addProvider(new BouncyCastleProvider());
+                JSch ssh=new JSch();ssh.setKnownHosts(credential(Config.KNOWN_HOSTS_FILE).getAbsolutePath());
+                ssh.addIdentity(credential(Config.KEY_FILE).getAbsolutePath());
+                session=ssh.getSession(config.get("user"),config.get("host"),Integer.parseInt(config.get("port")));
+                activeSession=session;session.setConfig("StrictHostKeyChecking","yes");session.setConfig("PreferredAuthentications","publickey");session.setTimeout(30000);
+                show("Synchronizing over SFTP …");session.connect(15000);checkCancelled();
+                sftp=(ChannelSftp)session.openChannel("sftp");sftp.connect(15000);activeChannel=sftp;
+                String destination=config.getOrDefault("sftpdatadestination",config.get("datadestination"));
+                if(destination.contains("..")||destination.contains("\n")||destination.trim().isEmpty())throw new IOException("Invalid sync destination");
+                SyncSftp.exchange(store,sftp,destination+"/.chaosbox-sync",this::checkCancelled,this::show);
                 checkCancelled();
-                File file = entry.getKey();
-                String destination = entry.getValue();
-                stage = "File " + file.getName() + " → " + destination;
-                if (!destination.equals(currentDestination)) {
-                    try {
-                        RemoteFiles.ensureDirectory(sftp, remoteHome, destination, this::show);
-                    } catch (com.jcraft.jsch.SftpException e) {
-                        throw new IOException("Could not create or open destination folder: " + destination + " — " + e.getMessage(), e);
-                    }
-                    currentDestination = destination;
-                }
-                // Recheck before opening; never recurse or follow a source symlink.
-                if (!paths.canUpload(file) || !Files.isRegularFile(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
-                    throw new IOException("Source file is no longer available or has changed: " + file.getName());
-                }
-
-                String remote = escape(file.getName());
-                long sourceModified = file.lastModified();
-                boolean skip = RemoteFiles.shouldSkip(sftp, remote, sourceModified);
-
-                if (!skip) {
-
-                    show("Uploading: " + file.getName() + " → " + destination);
-                    // Publish only complete files. A cancelled transfer must not replace the server copy.
-                    String temporary = ".chaosbox-" + java.util.UUID.randomUUID() + ".upload";
-                    boolean published = false;
-                    try {
-                        try (InputStream in = Files.newInputStream(file.toPath(), LinkOption.NOFOLLOW_LINKS)) {
-                            sftp.put(in, temporary, new com.jcraft.jsch.SftpProgressMonitor() {
-                                public void init(int operation, String source, String target, long max) { }
-                                public boolean count(long count) { return !cancelled; }
-                                public void end() { }
-                            }, ChannelSftp.OVERWRITE);
-                        }
-                        checkCancelled();
-                        sftp.setMtime(temporary, (int) (sourceModified / 1000));
-                        sftp.rename(temporary, remote);
-                        published = true;
-                        copied++;
-                    } finally {
-                        if (!published && sftp.isConnected()) {
-                            try { sftp.rm(temporary); }
-                            catch (com.jcraft.jsch.SftpException cleanup) {
-                                show("Could not remove temporary server file: " + temporary);
-                            }
-                        }
-                    }
-                } else skipped++;
+                java.util.Map<String,java.util.List<org.json.JSONObject>> conflicts=store.apply();
+                show("Synchronization completed. "+conflicts.size()+" conflict(s); all versions retained.");
+                if(!conflicts.isEmpty())show("Long press synchronization to inspect and resolve conflicts.");
             }
-            checkCancelled();
-            show("Completed: " + copied + " file(s) uploaded, " + skipped
-                    + " unchanged or newer server file(s) skipped.");
-        } catch (Exception e) {
-            throw new IOException((cancelled ? "Synchronization cancelled" : "Upload failed")
-                    + " after " + copied + " file(s).\nStep: " + stage
-                    + "\n" + UploadErrors.describe(e), e);
-        } finally {
-            activeSession = null;
-            if (sftp != null) {
-                sftp.disconnect();
-            }
-            if (session != null) {
-                session.disconnect();
-            }
-        }
+        } catch(Exception e) {throw new IOException("Synchronization failed: "+UploadErrors.describe(e),e);}
+        finally {activeSession=null;activeChannel=null;if(sftp!=null)sftp.disconnect();if(session!=null)session.disconnect();}
     }
 
     private static String remoteSubfolder(File file, File primary, File legacy) throws IOException {
