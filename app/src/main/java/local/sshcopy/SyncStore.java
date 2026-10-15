@@ -172,7 +172,8 @@ final class SyncStore {
             combined.put(revision,op);incoming.add(op);
         }
         heads(combined);
-        for(JSONObject op:combined.values())if(op.has("blob")){
+        Set<String> verifiedBlobs=new HashSet<>();
+        for(JSONObject op:combined.values())if(op.has("blob")&&verifiedBlobs.add(op.getString("blob"))){
             File source=new File(directory,"blobs/"+op.getString("blob")+".blob");if(!source.exists())source=new File(root,"blobs/"+op.getString("blob")+".blob");
             if(Files.isSymbolicLink(source.toPath())||!source.isFile()||!hash(source).equals(op.getString("blob")))throw new IOException("Missing or corrupt media payload");
         }
@@ -240,6 +241,9 @@ final class SyncStore {
     }
     private void captureImpl() throws Exception {
         Map<String,JSONObject> operations=operations();
+        Map<String,List<JSONObject>> byId=new HashMap<>();
+        for(JSONObject op:operations.values())byId.computeIfAbsent(op.getString("id"),key->new ArrayList<>()).add(op);
+        JSONObject materialized=materialized();
         for(String kind:new String[]{"record","media"}) {
             boolean media=kind.equals("media");File folder=media?images:data;
             List<File> candidates=sources(folder,media);
@@ -253,13 +257,15 @@ final class SyncStore {
                 for(int i=0;i<records.size();i++) {
                     JSONObject record=records.get(i);String ident=record.optString("id","");if(ident.isEmpty())ident=legacyId(kind,relative,i);
                     JSONObject previous=operations.get(record.optString("revision","")),same=null;
-                    for(JSONObject op:operations.values()) {
-                        if(previous!=null&&op!=previous)continue;
+                    for(JSONObject op:previous!=null?Collections.singletonList(previous):byId.getOrDefault(ident,Collections.emptyList())) {
                         if(!ident.equals(op.getString("id"))||!op.getString("action").equals("put"))continue;
-                        if(canonical(clean(op.getJSONObject("record"))).equals(canonical(clean(record)))&&relative.equals(op.getString("path"))&&(!media||blob.equals(op.optString("blob"))||blob.equals(materialized().optString(op.getString("revision"))))) {same=op;break;}
+                        if(canonical(clean(op.getJSONObject("record"))).equals(canonical(clean(record)))&&relative.equals(op.getString("path"))&&(!media||blob.equals(op.optString("blob"))||blob.equals(materialized.optString(op.getString("revision"))))) {same=op;break;}
                     }
                     if(same!=null) {if(!media&&!record.has("id")) {record.put("id",ident);record.put("revision",same.getString("revision"));changed=true;}continue;}
-                    records.set(i,issue(kind,relative,record,media?file:null,false,null,i));changed|=!media;operations=operations();
+                    JSONObject updated=issue(kind,relative,record,media?file:null,false,null,i);
+                    records.set(i,updated);changed|=!media;
+                    JSONObject issued=operations.get(updated.getString("revision"));
+                    byId.computeIfAbsent(ident,key->new ArrayList<>()).add(issued);
                 }
                 if(changed)atomic(file,(canonical(new JSONArray(records))+"\n").getBytes(StandardCharsets.UTF_8));
             }

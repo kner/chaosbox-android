@@ -515,3 +515,19 @@ After building the APK, supply an installed org.json JAR for JVM tests:
 
 The second test uses an ephemeral localhost SFTP server and temporary keys;
 it never connects to the configured production server.
+
+### Fast unchanged media synchronization
+
+Android records successful publication of the remote `JPG/` files in
+`TXT/.chaosbox-sync/media-checkpoint.json`. It ties the published files to the
+media operations in the shared journal. When these operations are unchanged,
+Android skips remote media checks and transfers, including after record-only edits.
+Changes from Desktop also invalidate the checkpoint through their media journal
+operations. The first sync after upgrading verifies media once and creates the checkpoint.
+
+Remote `JPG/` files are managed by ChaosBox. Direct server edits are not detected
+by this fast path. To request full verification, remove only
+`media-checkpoint.json` from the selected server profile's `TXT/.chaosbox-sync/`
+directory, then synchronize. Missing or malformed checkpoints trigger full
+verification. Failed media publication leaves no valid checkpoint; the next run
+verifies again. The immutable journal and media blobs remain unchanged by this optimization.

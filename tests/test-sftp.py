@@ -10,6 +10,8 @@ from chaos_sync import Store,atomic
 from sync_transport import sftp_exchange,sftp_connection,valid_manifest
 
 operation_reads=[]
+media_reads=[]
+fail_media_rename=False
 
 class Auth(paramiko.ServerInterface):
     def __init__(self,key):self.key=key
@@ -36,6 +38,7 @@ class Server(paramiko.SFTPServerInterface):
         except OSError as e:return paramiko.SFTPServer.convert_errno(e.errno)
     def open(self,path,flags,attr):
         if path.endswith('.op') and not flags&(os.O_WRONLY|os.O_RDWR):operation_reads.append(path)
+        if '/JPG/' in path and not flags&(os.O_WRONLY|os.O_RDWR):media_reads.append(path)
         try:
             fd=os.open(self.path(path),flags,0o600);mode='r+b' if flags&os.O_RDWR else 'wb' if flags&os.O_WRONLY else 'rb'
             stream=os.fdopen(fd,mode);handle=paramiko.SFTPHandle(flags);handle.readfile=stream;handle.writefile=stream;return handle
@@ -43,7 +46,9 @@ class Server(paramiko.SFTPServerInterface):
     def mkdir(self,path,attr):return self.change(lambda:self.path(path).mkdir())
     def rmdir(self,path):return self.change(lambda:self.path(path).rmdir())
     def remove(self,path):return self.change(lambda:self.path(path).unlink())
-    def rename(self,old,new):return self.change(lambda:self.path(old).rename(self.path(new)))
+    def rename(self,old,new):
+        if fail_media_rename and '/JPG/' in new:return paramiko.SFTP_PERMISSION_DENIED
+        return self.change(lambda:self.path(old).rename(self.path(new)))
     def change(self,action):
         try:action();return paramiko.SFTP_OK
         except OSError as e:return paramiko.SFTPServer.convert_errno(e.errno)
@@ -86,17 +91,48 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-local-sftp-') as temporary:
         assert valid_manifest(remote_index) and remote_index['checksum']==store.checksums()['checksum']
     try:
         java();python();assert json.loads((second/'TXT/box.json').read_text())[0]['comment']=='SFTP Grüße 東京'
+        checkpoint=server_root/'shared/TXT/.chaosbox-sync/media-checkpoint.json'
+        receipt=checkpoint.read_bytes()
+        media_reads.clear();java()
+        assert not media_reads,media_reads
+        assert checkpoint.read_bytes()==receipt
+        record_only=json.loads((second/'TXT/box.json').read_text());record_only[0]['comment']='record-only change'
+        atomic(second/'TXT/box.json',json.dumps(record_only));python()
+        media_reads.clear();java();assert not media_reads,media_reads
+        assert checkpoint.read_bytes()==receipt
         projected=server_root/'shared/JPG/SCHRAUBEN/Grüße photo.jpg'
         assert json.loads(projected.read_text())['comment']=='photo'
         android_photo=first/'JPG/SCHRAUBEN/Grüße photo.jpg'
         record=json.loads(android_photo.read_text());record['comment']='Android photo edit'
-        atomic(android_photo,json.dumps(record));java()
+        atomic(android_photo,json.dumps(record))
+        fail_media_rename=True
+        result=subprocess.run(['java','-cp',f'{folder}:{classpath}','local.sshcopy.SftpSyncTest',str(first),str(port),str(keypath),str(hosts)],capture_output=True,text=True)
+        assert result.returncode!=0
+        assert not checkpoint.exists()
+        assert not (server_root/'shared/TXT/.chaosbox-sync/transfer.lock').exists()
+        fail_media_rename=False
+        java()
         assert json.loads(projected.read_text())['comment']=='Android photo edit'
+        assert checkpoint.read_bytes()!=receipt
+        media_reads.clear();java();assert not media_reads,media_reads
         python()
         op=next(v[0] for v in store.heads().values() if v[0]['kind']=='media')
         record=dict(op['record'],comment='updated photo')
         photo=second/'JPG/SCHRAUBEN/Grüße photo.jpg';atomic(photo,json.dumps(record))
         python();java();assert json.loads(projected.read_text())['comment']=='updated photo'
+        # A missing or corrupt receipt triggers full content verification and repairs the receipt.
+        checkpoint.write_text('{invalid')
+        media_reads.clear();java();assert media_reads
+        json.loads(checkpoint.read_text())
+        # Untracked out-of-band media must still be retained during an explicit full verification.
+        checkpoint.unlink();projected.write_text('untracked server edit')
+        result=subprocess.run(['java','-cp',f'{folder}:{classpath}','local.sshcopy.SftpSyncTest',str(first),str(port),str(keypath),str(hosts)],capture_output=True,text=True)
+        assert result.returncode!=0 and 'Untracked remote JPG file' in result.stderr,result.stderr
+        assert projected.read_text()=='untracked server edit' and not checkpoint.exists()
+        # Restore the actual current payload, including the desktop edit.
+        latest=next(v[0] for v in store.heads().values() if v[0]['kind']=='media')
+        projected.write_bytes((store.root/'blobs'/f"{latest['blob']}.blob").read_bytes())
+        java()
         store.delete(photo);python();java();assert not projected.exists()
         python()  # Receive Android's new device acknowledgement before measuring reuse.
         operation_reads.clear();python();assert not operation_reads,operation_reads
@@ -105,7 +141,7 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-local-sftp-') as temporary:
         assert json.loads((first/'TXT/box.json').read_text())==[]
         assert not (server_root/'shared/TXT/.chaosbox-sync/transfer.lock').exists()
         assert (server_root/'shared/TXT/.chaosbox-sync/.htaccess').read_text()=='Require all denied\n'
-        print('PASS: actual JSch ↔ Paramiko SFTP, named JPG creation/update/deletion, strict host verification, Unicode, deletion propagation, device ACKs, identical checksums, zero unchanged operation downloads and lock cleanup')
+        print('PASS: actual JSch ↔ Paramiko SFTP, named JPG creation/update/deletion, strict host verification, Unicode, deletion propagation, device ACKs, identical checksums, zero unchanged operation/media downloads, record-only fast path, failed-publication retry, media checkpoint invalidation/recovery, untracked-file protection and lock cleanup')
     finally:
         stop.set();thread.join(2);listener.close()
         for connection in connections:connection.close()

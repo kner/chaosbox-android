@@ -14,7 +14,7 @@ final class SyncSftp {
         if(path.isEmpty()||path.equals(".")||path.equals("/"))return;
         int parent=path.lastIndexOf('/');if(parent>0)mkdirs(sftp,path.substring(0,parent));
         try {if(!sftp.lstat(path).isDir())throw new IOException("Unsafe remote directory: "+path);}
-        catch(SftpException e) {if(e.id!=ChannelSftp.SSH_FX_NO_SUCH_FILE)throw e;int slash=path.lastIndexOf('/');if(slash>0)mkdirs(sftp,path.substring(0,slash));sftp.mkdir(path);}
+        catch(SftpException e) {if(e.id!=ChannelSftp.SSH_FX_NO_SUCH_FILE)throw e;sftp.mkdir(path);}
     }
     static JSONObject inventory(Vector<ChannelSftp.LsEntry> entries) throws Exception {
         JSONObject result=new JSONObject();
@@ -59,6 +59,31 @@ final class SyncSftp {
         return result.toString();
     }
     static String parentPath(String path) {int slash=path.lastIndexOf('/');return slash<0?"":slash==0?"/":path.substring(0,slash);}
+    // A receipt is published only after the named JPG projection completes under transfer.lock.
+    // Journal-only clients remain compatible: any new media operation changes this checksum.
+    static String mediaChecksum(Map<String,JSONObject> operations) throws Exception {
+        JSONObject media=new JSONObject();
+        for(Map.Entry<String,JSONObject> entry:operations.entrySet())
+            if(entry.getValue().getString("kind").equals("media"))media.put(entry.getKey(),entry.getValue());
+        return SyncStore.hash(SyncStore.canonical(media).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    static boolean mediaCheckpointMatches(ChannelSftp sftp,String remote,String images,String checksum,Check check) throws Exception {
+        try(InputStream in=sftp.get(remote+"/media-checkpoint.json");ByteArrayOutputStream out=new ByteArrayOutputStream()) {
+            byte[] bytes=new byte[1024];for(int n;(n=in.read(bytes))!=-1;) {
+                check.run();out.write(bytes,0,n);if(out.size()>4096)return false;
+            }
+            JSONObject receipt=new JSONObject(out.toString("UTF-8"));
+            return receipt.optInt("schema")==1&&images.equals(receipt.optString("images"))&&checksum.equals(receipt.optString("media_checksum"));
+        }catch(SftpException|JSONException ignored){return false;}
+    }
+    static void publishMediaCheckpoint(ChannelSftp sftp,String remote,String images,String checksum,Check check) throws Exception {
+        JSONObject receipt=new JSONObject();receipt.put("schema",1);receipt.put("images",images);receipt.put("media_checksum",checksum);
+        String temporary=remote+"/.media-checkpoint-"+UUID.randomUUID()+".tmp";
+        try {
+            check.run();sftp.put(new ByteArrayInputStream((SyncStore.canonical(receipt)+"\n").getBytes(java.nio.charset.StandardCharsets.UTF_8)),temporary);
+            check.run();sftp.rename(temporary,remote+"/media-checkpoint.json");
+        }finally{try{sftp.rm(temporary);}catch(SftpException ignored){}}
+    }
     static void publishImages(SyncStore store,ChannelSftp sftp,String remote,Check check,Consumer<String> log) throws Exception {
         Map<String,JSONObject> operations=store.operations();
         Map<String,Set<String>> known=new TreeMap<>();Map<String,String> desired=new TreeMap<>(),current=new TreeMap<>();Set<String> protectedPaths=new HashSet<>();
@@ -74,9 +99,20 @@ final class SyncSftp {
         }
         for(String path:protectedPaths)desired.remove(path);
         String base=parentPath(parentPath(remote)),images=(base.isEmpty()?"":base.endsWith("/")?base:base+"/")+"JPG";
-        log.accept("Updating current media in remote JPG/ …");mkdirs(sftp,images);
+        String checksum=mediaChecksum(operations);
+        check.run();
+        if(mediaCheckpointMatches(sftp,remote,images,checksum,check)) {
+            log.accept("Media journal unchanged; skipping remote JPG checks and transfers.");
+            return;
+        }
+        // Remove an older receipt before any media mutation. A failed run must be verified again.
+        try{sftp.rm(remote+"/media-checkpoint.json");}catch(SftpException e){if(e.id!=ChannelSftp.SSH_FX_NO_SUCH_FILE)throw e;}
+        log.accept("Media journal changed or checkpoint missing; verifying remote JPG/ …");mkdirs(sftp,images);
+        Set<String> directories=new HashSet<>();directories.add(images);
+        int verified=0;
         for(String path:known.keySet()) {
-            if(protectedPaths.contains(path))continue;check.run();String target=images+"/"+path;mkdirs(sftp,parentPath(target));
+            if(protectedPaths.contains(path))continue;check.run();String target=images+"/"+path;String parent=parentPath(target);if(directories.add(parent))mkdirs(sftp,parent);
+            log.accept("Checking remote media "+(++verified)+"/"+known.size()+": "+path);
             String hash=remoteHash(sftp,target,check);current.put(path,hash);
             if(desired.containsKey(path)&&hash!=null&&!known.get(path).contains(hash))throw new IOException("Untracked remote JPG file; retained: "+path);
         }
@@ -96,6 +132,7 @@ final class SyncSftp {
         for(Map.Entry<String,String> entry:current.entrySet())if(!desired.containsKey(entry.getKey())&&known.get(entry.getKey()).contains(entry.getValue())) {
             check.run();sftp.rm(images+"/"+entry.getKey());
         }
+        publishMediaCheckpoint(sftp,remote,images,checksum,check);
     }
     static void exchange(SyncStore store,ChannelSftp sftp,String remote,Check check,Consumer<String> log) throws Exception {
         mkdirs(sftp,remote);String lock=remote+"/transfer.lock";
@@ -103,6 +140,7 @@ final class SyncSftp {
         Path staging=Files.createTempDirectory(store.root.toPath(),".incoming-");
         try {
             try{sftp.lstat(remote+"/.htaccess");}catch(SftpException e){if(e.id!=ChannelSftp.SSH_FX_NO_SUCH_FILE)throw e;sftp.put(new ByteArrayInputStream("Require all denied\n".getBytes(java.nio.charset.StandardCharsets.UTF_8)),remote+"/.htaccess");}
+            log.accept("Reading journal checksum indexes …");
             JSONObject serverIndex=readManifest(sftp,remote),localIndex=store.checksums();
             Map<String,Set<String>> remoteFiles=new HashMap<>();
             for(String folder:new String[]{"blobs","ops"}) {
@@ -117,6 +155,8 @@ final class SyncSftp {
                     useIndex=present.equals(indexed)&&SyncStore.canonical(inventory(entries)).equals(SyncStore.canonical(serverIndex.getJSONObject("inventory")));
                     if(useIndex)log.accept("Prüfsummenindex geprüft; nur fehlende Änderungen herunterladen.");
                 }
+                log.accept("Checking remote "+folder+" ("+entries.size()+" entries) …");
+                int downloaded=0;
                 Set<String> remoteNames=new HashSet<>();remoteFiles.put(folder,remoteNames);
                 for(ChannelSftp.LsEntry entry:entries) {
                     check.run();String name=entry.getFilename();
@@ -126,6 +166,7 @@ final class SyncSftp {
                     File known=new File(store.root,folder+"/"+name);
                     if(folder.equals("ops")&&useIndex&&localIndex.getJSONObject("ops").has(name)&&localIndex.getJSONObject("ops").getString(name).equals(serverIndex.getJSONObject("ops").getString(name)))continue;
                     if(folder.equals("blobs")&&known.isFile()&&!Files.isSymbolicLink(known.toPath())&&SyncStore.hash(known).equals(name.substring(0,name.length()-suffix.length())))continue;
+                    log.accept("Downloading "+folder+" "+(++downloaded)+": "+name);
                     try(OutputStream out=Files.newOutputStream(new File(local,name).toPath())) {
                         sftp.get(directory+"/"+name,out,new SftpProgressMonitor(){
                             public void init(int op,String src,String dst,long max){}public boolean count(long n){try{check.run();return true;}catch(Exception e){return false;}}public void end(){}
@@ -134,15 +175,19 @@ final class SyncSftp {
                     check.run();
                 }
             }
+            check.run();log.accept("Validating downloaded journal and media …");
             store.importFrom(staging.toFile());
+            check.run();log.accept("Scanning local files for changes …");
             store.capture();
+            check.run();log.accept("Applying synchronized changes …");
             store.apply();
-            store.acknowledge();
+            check.run();store.acknowledge();
             for(String folder:new String[]{"blobs","ops"}) {
                 String suffix=folder.equals("blobs")?".blob":".op",directory=remote+"/"+folder;
                 File[] files=new File(store.root,folder).listFiles((d,n)->n.endsWith(suffix));if(files==null)continue;Arrays.sort(files);
                 for(File file:files) {
                     check.run();if(remoteFiles.get(folder).contains(file.getName()))continue;
+                    log.accept("Uploading "+folder+": "+file.getName());
                     String temporary=directory+"/."+UUID.randomUUID()+".tmp";
                     try {
                         sftp.put(file.getPath(),temporary,new SftpProgressMonitor(){
@@ -153,6 +198,7 @@ final class SyncSftp {
             }
             store.heads(store.operations());
             publishImages(store,sftp,remote,check,log);
+            log.accept("Publishing journal checksums …");
             publishManifest(store,sftp,remote,check,serverIndex);
             log.accept("Prüfsumme lokal und am Server gleich; Journal synchronisiert.");
             log.accept("Immutable journal exchanged over SFTP.");
