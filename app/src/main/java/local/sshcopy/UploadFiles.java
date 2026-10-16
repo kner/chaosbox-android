@@ -16,6 +16,7 @@ final class UploadFiles {
     private final Context context;
     private final Consumer<String> log;
     private volatile boolean cancelled;
+    private String generation;
     private volatile Session activeSession;
     private volatile ChannelSftp activeChannel;
 
@@ -27,6 +28,8 @@ final class UploadFiles {
     }
 
     private void checkCancelled() throws IOException {
+        if(generation!=null&&!generation.equals(InstallationFiles.existingGeneration(Config.root(context))))
+            throw new IOException("Installation directory was reset. Reopen the app and configure synchronization again.");
         if (cancelled || Thread.currentThread().isInterrupted())
             throw new IOException("Synchronization cancelled. Please restart manually.");
     }
@@ -41,7 +44,9 @@ final class UploadFiles {
 
     private File credential(String name) throws IOException {
 
-        File file = new File(context.getFilesDir(), name);
+        File directory=InstallationFiles.owned(Config.root(context),".state/credentials");
+        Files.createDirectories(directory.toPath());
+        File file = new File(directory, name);
         if (!file.isFile()) {
             try (InputStream in = context.getAssets().open(name); OutputStream out = new FileOutputStream(file)) {
                 byte[] buffer = new byte[8192];
@@ -59,6 +64,7 @@ final class UploadFiles {
     synchronized void copy() throws IOException {
         Session session=null; ChannelSftp sftp=null;
         try {
+            generation=InstallationFiles.existingGeneration(Config.root(context));
             checkCancelled();
             SyncStore store=SyncSftp.store(paths);
             try (AutoCloseable ignored=store.lock()) {
@@ -82,16 +88,4 @@ final class UploadFiles {
         finally {activeSession=null;activeChannel=null;if(sftp!=null)sftp.disconnect();if(session!=null)session.disconnect();}
     }
 
-    private static String remoteSubfolder(File file, File primary, File legacy) throws IOException {
-        java.nio.file.Path parent = file.getCanonicalFile().getParentFile().toPath();
-        java.nio.file.Path root = parent.startsWith(primary.toPath())
-                ? primary.toPath() : legacy.toPath();
-        if (!parent.startsWith(root)) throw new IOException("File outside the data folder: " + file);
-        String relative = root.relativize(parent).toString().replace(File.separatorChar, '/');
-        return relative.isEmpty() ? "" : "/" + relative;
-    }
-
-    private static String escape(String name) {
-        return name.replace("\\", "\\\\").replace("*", "\\*").replace("?", "\\?");
-    }
 }

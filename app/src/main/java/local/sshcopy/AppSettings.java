@@ -1,51 +1,38 @@
 package local.sshcopy;
 
 import android.content.Context;
-import android.content.SharedPreferences;
-import android.os.Environment;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 
-/** Selected profile is private app state, independent of the shared setup file. */
+/** Profile selection, setup and data belong to this installation directory. */
 final class AppSettings {
     static final class Selection {
         final AppProfiles config;
         final AppProfiles.Profile profile;
         final StoragePaths paths;
-        Selection(AppProfiles config, AppProfiles.Profile profile) throws IOException {
+        Selection(AppProfiles config, AppProfiles.Profile profile, File root) throws IOException {
             this.config = config;
             this.profile = profile;
-            paths = StoragePaths.forProfile(Environment.getExternalStorageDirectory(), profile);
+            paths = StoragePaths.forProfile(root, profile);
         }
     }
-    private static SharedPreferences preferences(Context context) {
-        return context.getSharedPreferences("app-profile", Context.MODE_PRIVATE);
+    static String defaults(Context context) throws IOException {
+        try(InputStream in=context.getAssets().open(Config.SETUP_ASSET);ByteArrayOutputStream out=new ByteArrayOutputStream()) {
+            byte[] buffer=new byte[8192];for(int n;(n=in.read(buffer))!=-1;)out.write(buffer,0,n);
+            return new String(out.toByteArray(),StandardCharsets.UTF_8);
+        }
     }
     static AppProfiles configuration(Context context) throws IOException {
-        File file = new File(Environment.getExternalStorageDirectory(), Config.SETUP);
-        String text;
-        if (file.isFile() && file.canRead()) {
-            text = LocalData.read(file);
-        } else {
-            text = preferences(context).getString("setup-cache", null);
-            if (text == null) {
-                try (InputStream in = context.getAssets().open(Config.SETUP_ASSET);
-                     ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-                    byte[] buffer = new byte[4096]; int n;
-                    while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
-                    text = new String(out.toByteArray(), StandardCharsets.UTF_8);
-                }
-            }
-        }
+        String text=InstallationFiles.setup(Config.root(context),defaults(context));
         AppProfiles config = AppProfiles.parse(text);
-        validate(config);
-        preferences(context).edit().putString("setup-cache", text).apply();
+        validate(context,config);
         return config;
     }
-    static void validate(AppProfiles config) throws IOException {
+    static void validate(Context context, AppProfiles config) throws IOException {
+        File installationRoot=Config.root(context);
         java.util.List<File> roots = new java.util.ArrayList<>();
         for (AppProfiles.Profile profile : config.profiles) {
-            StoragePaths paths = StoragePaths.forProfile(Environment.getExternalStorageDirectory(), profile);
+            StoragePaths paths = StoragePaths.forProfile(installationRoot, profile);
             java.util.Set<File> profileRoots = new java.util.LinkedHashSet<>(
                     java.util.Arrays.asList(paths.images, paths.data, paths.legacyImages, paths.legacyData));
             for (File root : profileRoots) {
@@ -57,12 +44,12 @@ final class AppSettings {
     }
     static Selection rememberCategory(Context context, Selection current, String category) throws IOException {
         if (category.trim().isEmpty()) return current;
-        File file = new File(Environment.getExternalStorageDirectory(), Config.SETUP);
+        File file = Config.setup(context);
         String original = LocalData.read(file);
         String updated = AppProfiles.withCategory(original, current.profile.id, category);
         AppProfiles config = AppProfiles.parse(updated);
-        validate(config);
-        Selection result = new Selection(config, config.find(current.profile.id));
+        validate(context,config);
+        Selection result = new Selection(config, config.find(current.profile.id),Config.root(context));
         if (!updated.equals(original)) {
             android.util.AtomicFile target = new android.util.AtomicFile(file);
             FileOutputStream out = null;
@@ -75,21 +62,21 @@ final class AppSettings {
                 throw e;
             }
         }
-        preferences(context).edit().putString("setup-cache", updated).apply();
         return result;
     }
 
     static Selection load(Context context) throws IOException {
         AppProfiles config = configuration(context);
-        return new Selection(config, config.selected(preferences(context).getString("selected", "")));
+        File selected=InstallationFiles.owned(Config.root(context),".state/selected-profile");
+        return new Selection(config,config.selected(selected.isFile()?LocalData.read(selected).trim():""),Config.root(context));
     }
     static Selection select(Context context, String id) throws IOException {
         AppProfiles config = configuration(context);
         AppProfiles.Profile profile = config.find(id);
         if (profile == null) throw new IOException("App profile not found: " + id);
-        Selection selection = new Selection(config, profile);
-        if (!preferences(context).edit().putString("selected", id).commit())
-            throw new IOException("Could not save profile selection.");
+        Selection selection = new Selection(config, profile,Config.root(context));
+        File selected=InstallationFiles.owned(Config.root(context),".state/selected-profile");
+        SyncStore.atomic(selected,id.getBytes(StandardCharsets.UTF_8));
         return selection;
     }
 }

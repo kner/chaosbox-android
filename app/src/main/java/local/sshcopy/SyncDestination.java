@@ -13,13 +13,12 @@ final class SyncDestination {
             String selected=settings.getOrDefault("remoteprofile",profile).toLowerCase(Locale.ROOT);
             for(String part:selected.split("/",-1))if(part.isEmpty()||part.startsWith(".")||part.contains("\\")||part.matches(".*[\\p{Cntrl}].*"))
                 throw new IOException("Invalid remote profile");
-            String root="chaosbox-data/installations/"+installation+"/profiles/"+selected;
+            String web=settings.getOrDefault("webinstallation","l1").trim();
+            for(String part:web.split("/",-1))if(!part.matches("[A-Za-z0-9][A-Za-z0-9_.-]*"))throw new IOException("Invalid web installation directory");
+            String root=web+"/storage/installations/"+installation+"/profiles/"+selected;
             settings.put("datadestination",root+"/TXT");settings.put("sftpdatadestination",root+"/TXT");settings.put("imagedestination",root+"/JPG");
         }else {
-            String destination=settings.getOrDefault("sftpdatadestination",settings.getOrDefault("datadestination",""));
-            if(destination.isEmpty()||destination.equals("chaosbox-data/TXT")||destination.startsWith("chaosbox-data/profiles/"))
-                throw new IOException("Select a Desktop installation: set Installation in [SSH] in ChaosBox/Setup/setup.ini. The installation ID is shown by Desktop synchronization.");
-            settings.put("datadestination",destination);
+            throw new IOException("Fresh installation: set Installation in this installation's setup.ini to explicitly join a Desktop installation.");
         }
     }
 }

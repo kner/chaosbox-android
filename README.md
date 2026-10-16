@@ -1,3 +1,41 @@
+# Reset-safe installations
+
+Every Android app copy owns `/storage/emulated/0/<name>/`, where `<name>` is the
+`--installdir` name (default `ChaosBox-default`). Its complete layout is:
+
+```text
+<name>/
+  setup.ini
+  .installation-id
+  .state/credentials/
+  .state/selected-profile
+  .indices/
+  Chaosbox/JPG/
+  Chaosbox/TXT/.chaosbox-sync/
+  Bilderbox/JPG/
+  Bilderbox/TXT/.chaosbox-sync/
+```
+
+Profile directories are fixed to `<profile>/JPG` and `<profile>/TXT` inside that
+installation; `JPG`, `Bilder`, `Daten` and `[Pfade]` custom paths are no longer used.
+Close the app, remove its complete installation directory, and reopen it to start
+empty. No old shared folders, cached setup, bundled data, or old journals are
+imported. A fresh installation has no remote binding and cannot sync until you
+explicitly configure `Installation` again. A recreated Desktop installation has a
+new generation ID, even at the same path. Configure Android against that new ID:
+
+```bash
+./upload-adb.sh --installdir cbhaushalt \
+  --desktop-install /home/roland/CBHaushalt --remote-profile chaosbox
+```
+
+Old folders and old server generations are left untouched and are never used as
+a fallback. Updating an existing installation preserves its local generation.
+An open client refuses synchronization after its generation has been removed.
+The new path layout is intentionally not an automatic migration of old data.
+
+---
+
 # ChaosBox — Android and Ubuntu apps
 
 ## Reference and synchronization
@@ -87,7 +125,7 @@ python3 tests/test-mp4.py
 
 ## Storage paths and category folders
 
-Configure the base folders in `ChaosBox/Setup/setup.ini`:
+Configure profile labels in `<installdir>/setup.ini` (folders are fixed):
 
 ```ini
 [App]
@@ -95,18 +133,13 @@ Standard=Chaosbox
 
 [App.Chaosbox]
 Titel=Chaosbox
-JPG=ChaosBox/JPG
-Daten=ChaosBox/boxes
 Felder=Box,Anzahl,Device,Alias,Kategorie,Kommentar,Package
 Kategorie=Heizung, Wasser, Elektro, Maurer
 ```
 
-Relative paths refer to Android's shared internal storage; absolute paths are
-also supported. Each app profile defines its own image and data paths. Tap the
-title to select a profile (see below for details).
-
-Images are stored under `JPG/<category>/`. New JSON boxes are stored directly in
-`boxes/`; existing files in its subfolders stay there.
+Each profile uses `<installdir>/<profile>/JPG` and `<installdir>/<profile>/TXT`.
+External/custom folder paths are unsupported. Tap the title to select a profile.
+Images use category subfolders; JSON records use TXT and its existing subfolders.
 Category names are converted to lowercase; a missing category becomes `unassigned`.
 For example, `Elektronik > Stromversorgung` becomes `elektronik`.
 For multiple categories, the first is currently used. A box containing multiple
@@ -121,16 +154,10 @@ background. The original PNG is preserved, even inside the configured image
 folder. The preview displays the entire image at its original aspect ratio,
 without a fixed height limit; tall images can be scrolled vertically.
 
-On the next app launch, images directly in `JPG` are sorted into category
-subfolders. Images already organized in subfolders stay there. JSON files are
-neither moved by category nor renamed. The app reads `boxes` recursively,
-including all subfolders. Files moved to `daten` by an earlier version remain
-readable at their existing locations and are not moved again. File contents and
-modification times are preserved. JPG filename collisions do not overwrite
-files; the app reports source files that could not be moved. The search index
-remains separate at `ChaosBox/data/records.json`. Missing bundled JPG and box
-files are restored once on the first launch of this version. Existing files,
-including those in subfolders, are neither overwritten nor duplicated.
+On app launch, loose images inside the current profile's JPG directory are sorted
+into categories. Nested folders stay intact. JSON files are not moved by category.
+Indexes belong to `<installdir>/.indices`; old data folders and bundled records are
+never imported or restored.
 
 “Open JPG” lists all JPG/JPEG files in the current profile's image folder and
 all its subfolders, with no depth limit. Relative paths distinguish files with
@@ -172,9 +199,9 @@ writer, including Unicode, empty fields and unrelated XMP preservation:
 It requires a JDK, ExifTool and the desktop Python dependencies; the reference
 project defaults to the sibling `chaosbox-desktop` directory (`--desktop` overrides it).
 
-- Images: `/storage/emulated/0/ChaosBox/JPG`
-- Configuration: `/storage/emulated/0/ChaosBox/Setup/setup.ini`
-- JSON records: `/storage/emulated/0/ChaosBox/boxes`
+- Images: `/storage/emulated/0/<installdir>/Chaosbox/JPG`
+- Configuration: `/storage/emulated/0/<installdir>/setup.ini`
+- JSON records: `/storage/emulated/0/<installdir>/Chaosbox/TXT`
 
 The category list is loaded from `Kategorie=` in the selected `[App.Name]`
 section. Switching app profiles displays that profile's own categories. If the
@@ -191,16 +218,20 @@ It also publishes the current media under the server's `JPG/` folder using
 their original filenames and category subfolders. Conflicts retain the existing
 server copy until resolved; unrelated server files are preserved.
 Set `Installation=<Desktop installation ID>` in `[SSH]` or `[SSH.ProfileName]`
-in `ChaosBox/Setup/setup.ini` to choose the Desktop installation. Its sync log
+in `<installdir>/setup.ini` to choose the Desktop installation. Its sync log
 shows the ID. Use `RemoteProfile=...` if the collection names differ. Android
 refuses the old shared default until an installation is selected; see
 `SYNC-PROTOCOL.md` for the isolated server paths.
+Large journal uploads and downloads use up to four independent SFTP channels.
+Servers that refuse extra channels automatically use the main channel. Each
+file is staged and renamed under the same transfer lock; interrupted syncs
+can resume using already published immutable files. Media transfers remain sequential.
 Progress and errors remain visible; leaving the app cancels the transfer.
 Long press the button to resolve conflicts or restore deleted entries. The trash
 button deletes the selected entry; long press it to delete a whole JSON box.
 Box deletion leaves related media unchanged. No background synchronization runs.
 
-“Open JSON” loads `ChaosBox/boxes/<Box>.json` using the Box field (with an optional
+“Open JSON” loads `<installdir>/<profile>/TXT/<Box>.json` using the Box field (with an optional
 `.json` extension). Input is case-insensitive: `A11` opens and saves `a11.json`;
 box filenames are converted to lowercase. Supported formats include individual
 records, arrays, and objects containing multiple records under separate keys.
@@ -236,7 +267,7 @@ Output: `SSHCopy-debug.apk` (app name on the phone: ChaosBox).
 The bundled configuration comes exclusively from
 `app/src/main/assets/initial/Setup/setup.ini`. It is packaged in the APK at
 `assets/initial/Setup/setup.ini` and copied to
-`/storage/emulated/0/ChaosBox/Setup/setup.ini` when the editor opens, provided
+`/storage/emulated/0/<installdir>/setup.ini` when the editor opens, provided
 no file already exists there. An existing configuration is preserved during
 app updates. To use the new template on an existing device, back up the current
 file first, then replace or remove it.
@@ -261,15 +292,13 @@ Only completed temporary uploads are renamed to their final server filenames.
 
 ## Hardcoded settings
 
-Edit `app/src/main/java/local/sshcopy/Config.java` and rebuild to replace the supplied
-literal placeholders `source`, `hostname`, `x`, `y`. Relative source paths resolve
-under shared internal storage. Absolute source paths are also supported, subject
-to Android access restrictions.
+Connection defaults live in Config.java; `[SSH]` settings in the installation's
+setup.ini override them. Storage folders always remain inside the installation.
 
 ## SSH credentials (one-time local setup)
 
-The app expects an **unencrypted** SSH private key named `z` and an OpenSSH
-`known_hosts` file. It uses strict host-key verification and public-key-only login.
+The app uses the bundled SSH private key named by Config.KEY_FILE and an OpenSSH
+`known_hosts` file, copied into `<installdir>/.state/credentials`. It uses strict host-key verification and public-key-only login.
 No real private key is included in the delivered APK. Provision a dedicated key;
 its public key must be authorized on the server. Verify the server host key with
 your server administrator before adding it to `known_hosts`.
@@ -359,7 +388,36 @@ and in the app drawer, including round icons. The default app retains its origin
 icon colors. Launcher themes may override app colors; disable themed icons to see
 the installation colors.
 Each app has separate private settings and permissions, but configured shared
-storage paths such as `ChaosBox/Setup/setup.ini` and image/data folders remain shared.
+storage paths such as `<installdir>/setup.ini` and image/data folders remain shared.
+
+Configure Android's synchronization target during upload (Debug and the
+`upload-adb.sh` compatibility entry point):
+
+```bash
+./upload-adb.sh --installdir chaosbox_haushalt \
+  --desktop-install /home/roland/CBHaushalt --remote-profile chaosbox
+```
+
+`--desktop-install DIR` obtains the installation ID using the sibling
+`chaosbox-desktop` project's implementation and requires `DIR/setup.ini` to exist.
+It selects that Desktop installation on this computer. Alternatively, use
+`--installation ID` to supply the Desktop ID directly, including IDs from another
+computer. `--remote-profile NAME` optionally sets `RemoteProfile`; when omitted,
+its existing value is preserved. These configuration options require Python 3;
+automatic ID lookup also needs the Desktop Python dependencies.
+
+After a successful APK installation, the script updates
+`/sdcard/<name>/setup.ini`, preserving unrelated settings and making a
+uniquely named `.bak` copy of the previous file on the phone. On first install,
+it starts with the bundled setup template. Configuration failures produce a
+nonzero exit status even if APK installation already succeeded. The app is not
+started and synchronization is not triggered.
+
+Each named app owns `/sdcard/<name>/setup.ini`; it never edits another app copy's
+setup. Without `--installdir`, the directory name is `ChaosBox-default`. By default the
+configuration options update `[SSH]`; add `--ssh-profile NAME` for `[SSH.NAME]`.
+Legacy shared setup files, private setup caches and external profile data folders
+are not read or migrated.
 
 `upload-adb.sh` remains a compatibility entry point for Debug.
 Without `--installdir`, both upload scripts install the existing APK from the
@@ -374,31 +432,22 @@ place; the script reports the ADB error and does not uninstall it.
 
 ## ChaosBox storage
 
-The upload source is `/storage/emulated/0/ChaosBox/boxen`. Only immediate
-regular files are uploaded; subdirectories are excluded. Grant SSH Copy
-all-files access in Android settings. Existing files in Pictures/cbox are
-not moved automatically.
-
-The intended configuration location is `/storage/emulated/0/ChaosBox/setup/setup.ini`.
-INI parsing is not implemented yet; connection settings still come from Config.java.
-
-Use “Edit setup.ini” to edit and save setup.ini directly in the app.
-The categories are reloaded afterward.
+The selected profile uses `<installdir>/<profile>/JPG` and `TXT`, including
+subfolders. Grant all-files access in Android settings. Use “Edit setup.ini” to
+edit only this installation's setup. No shared or historical source folders are read.
 
 ## Current synchronization destination
 
-The main profile shares `chaosbox-data` with Desktop and the website. The journal
-is below `chaosbox-data/TXT/.chaosbox-sync`; materialized images remain under the
-local profile's JPG folder. Do not use the historical storage/app/exif targets
-for a current shared data set. Connection overrides are described above.
+`Installation` and `RemoteProfile` select
+`l1/storage/installations/<generation-id>/profiles/<profile>/`.
+Its journal is `TXT/.chaosbox-sync`. Fresh Android roots are unbound until this
+selection is explicitly configured. A recreated Desktop root has a new generation.
 
 ## Shared data file and search
 
-`ChaosBox/data/records.json` contains the records from all JPG/JPEG and MP4 files in
-`ChaosBox/JPG` and all JSON files in `ChaosBox/boxes`, including subfolders.
-`path` contains the source filename for each record. The file is rebuilt
-completely and atomically at app startup, after every save, and before searching.
-Invalid sources are reported; the previous data file is preserved.
+`<installdir>/.indices/<profile-key>/records.json` is the derived index of the
+selected profile's JPG/MP4 media and TXT records. It is rebuilt atomically; it is
+never an independent source from which deleted installation data is restored.
 
 The magnifying glass switches to empty search fields. Device and Category then
 become plain text inputs, and saving is disabled. A second tap starts the search.
@@ -417,7 +466,7 @@ search fields are still combined with AND.
 
 ### App profiles and field labels
 
-The shared `ChaosBox/Setup/setup.ini` file supports any number of `[App.Name]`
+The installation-owned `<installdir>/setup.ini` file supports any number of `[App.Name]`
 sections. `[App]` can specify the initial profile using `Standard=Chaosbox`;
 otherwise, the first App subsection is used.
 
@@ -427,15 +476,11 @@ Standard=Chaosbox
 
 [App.Chaosbox]
 Titel=Chaosbox
-JPG=ChaosBox/JPG
-Daten=ChaosBox/boxes
 Felder=Box,Anzahl,Device,Alias,Kategorie,Kommentar,Package
 Kategorie=Heizung, Wasser, Elektro, Maurer
 
 [App.Bilderbox]
 Titel=Bilderbox
-JPG=Bilderbox/JPG
-Daten=Bilderbox/boxes
 Felder=Box,,,Tags,Kategorie,Kommentar
 Kategorie=Fotos, Gemälde, Dokumente
 ```
@@ -445,12 +490,9 @@ restarts. Switching profiles resets the open form and uses the selected profile'
 image and JSON folders. Save any unsaved changes first. Profile switching is
 disabled during synchronization. Each profile has a separate default server subtree; explicit overrides must identify the same data set on every device.
 
-`JPG` (alternatively `Bilder`) and `Daten` can be relative to shared internal
-storage or absolute. Profiles require separate folders. Only JPG files are
-sorted by category into lowercase subfolders or `unassigned`.
-JSON files remain in the respective `boxes` folder or its subfolders.
-Earlier defaults `Daten=ChaosBox/daten` and `Daten=Bilderbox/daten` are migrated
-to `boxes`; files already moved to the earlier locations remain readable as well.
+Each profile has fixed JPG and TXT folders inside the installation. Custom path
+keys are ignored and removed when setup defaults are updated. There is no fallback
+to earlier daten/boxes folders.
 
 `Felder` has seven fixed positions: Box, Quantity, Device, Alias, Category,
 Comment, Package. Empty positions and omitted trailing positions hide both
@@ -459,9 +501,8 @@ and Package are hidden. If the entire `Felder` line is missing, all seven defaul
 fields are visible. JSON keys remain unchanged; hidden values in an opened
 record are preserved.
 
-Existing files with a `[Pfade]` section are still read and converted to an
-`[App.Chaosbox]` profile when the setup file is opened or saved. Custom paths
-are preserved.
+An old `[Pfade]` section is removed when setup is normalized; it never selects an
+external source. Labels/categories can still be converted without importing data.
 
 The previous global `[Kategorie]` section is removed when opening an older
 `setup.ini`. Its entries are copied into every profile without its own
@@ -531,3 +572,40 @@ by this fast path. To request full verification, remove only
 directory, then synchronize. Missing or malformed checkpoints trigger full
 verification. Failed media publication leaves no valid checkpoint; the next run
 verifies again. The immutable journal and media blobs remain unchanged by this optimization.
+
+### Repair media filename conflicts
+
+If synchronization reports `Media filename conflict`, long press the synchronization
+button, choose **Repair filename conflicts**, then **Keep both**. One object keeps
+its original filename; the others receive unique `_conflict_<object-id>` filenames.
+The repair records new journal revisions, preserving both objects, their media
+payloads and all history. It also works when neither image has been materialized
+on the phone yet. Synchronize again to propagate the repair to Desktop.
+Do not rename `.op` or `.blob` files by hand.
+
+### Deleting files on the server
+
+Removing a server file with a file manager does not publish a deletion. The sync
+journal retains it, and synchronization can recreate the media copy. Use
+`scripts/server-delete.py` on the server to record an explicit deletion, including
+when the file has already been removed. Python 3.8+ is required; no extra packages.
+Select the exact installation/profile root containing `JPG` and `TXT`:
+
+```sh
+python3 scripts/server-delete.py --data /absolute/server/profile --delete TXT/a11.json JPG/category/photo.jpg
+python3 scripts/server-delete.py --data /absolute/server/profile --delete TXT/a11.json JPG/category/photo.jpg --apply
+```
+
+The first command previews the affected object counts. The second publishes
+journal deletions under the shared transfer lock. JSON paths delete all current
+records in that box; associated media require their own explicit paths. Paths
+are case-sensitive. Missing or already-deleted objects report zero deletions.
+Conflicting objects must be resolved in a client first. Journal history and
+blobs remain available for restoration. The script does not remove projected
+files itself; the next normal client synchronization updates the server media
+projection. Desktop and Android receive the deletions when each next synchronizes;
+there is no automatic background sync. Offline edits can produce a conflict,
+which must be resolved explicitly. Do not delete journal operations or blobs.
+
+The script deliberately requires explicit paths: missing files can also indicate
+an incomplete upload, so absence alone is not treated as a deletion request.

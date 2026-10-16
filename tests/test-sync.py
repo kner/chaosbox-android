@@ -12,7 +12,7 @@ def run(*args):return subprocess.check_output(list(map(str,args)),text=True).str
 with tempfile.TemporaryDirectory(prefix='chaosbox-wire-') as temp:
     root=Path(temp);classes=root/'classes';classes.mkdir()
     files=['SyncStore','LocalData','BoxRecords','XmpRecords','JpegComments','Mp4Comments']
-    run('javac','-cp',a.json_jar,'-d',classes,*[ROOT/f'app/src/main/java/local/sshcopy/{name}.java' for name in files],ROOT/'tests/SyncStoreTest.java')
+    run('javac','-cp',a.json_jar,'-d',classes,*[ROOT/f'app/src/main/java/local/sshcopy/{name}.java' for name in files],ROOT/'tests/SyncStoreTest.java',ROOT/'tests/MediaFilenameConflictTest.java')
     def java(command,folder,*args):return run('java','-cp',f'{classes}:{a.json_jar}','local.sshcopy.SyncStoreTest',command,folder,*args)
     for key in ['comment','kommentar','Kommentar']:
         for value in [None,'','null','Grüße 東京']:
@@ -81,4 +81,12 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-wire-') as temp:
     image=next(e for e in entries if e.get('payload'))
     imagepath=run('php','-r','require $argv[1];$c=new App\\Services\\ChaosBoxCatalog($argv[2]);echo $c->imagePath($argv[3]);',WEB/'app/Services/ChaosBoxCatalog.php',android,image['image'])
     assert Path(imagepath).is_file()
-    print('PASS: identical migration; Android ↔ Desktop merge, Unicode, record deletion, JPEG/MP4 edits, unchanged video streams, media moves, offline conflict, resolution, restoration, idempotence and read-only Web projection')
+    collision_root=root/'filename-collisions'
+    run('java','-cp',f'{classes}:{a.json_jar}','local.sshcopy.MediaFilenameConflictTest',collision_root)
+    for case in ('case-false','case-true'):
+        source=chaos_sync.Store(collision_root/case/'JPG',collision_root/case/'TXT')
+        target=chaos_sync.Store(root/('received-'+case)/'JPG',root/('received-'+case)/'TXT')
+        exchange(source,target);target.apply();target.apply()
+        payloads=sorted(file.read_text() for file in target.images.rglob('*.jpg'))
+        assert payloads==['one','two'],payloads
+    print('PASS: identical migration; Android ↔ Desktop merge, Unicode, record deletion, JPEG/MP4 edits, unchanged video streams, media moves, filename collision repair propagated to Desktop, offline conflict, resolution, restoration, idempotence and read-only Web projection')

@@ -21,10 +21,11 @@ final class AppProfiles {
         Profile(String id, Map<String, String> values) throws IOException {
             this.id = id;
             title = values.getOrDefault("titel", id.equalsIgnoreCase("Chaobox") ? "Chaosbox" : id).trim();
-            images = values.getOrDefault("bilder", values.getOrDefault("jpg", "")).trim();
-            data = values.getOrDefault("daten", "").trim();
-            if (title.isEmpty() || images.isEmpty() || data.isEmpty())
-                throw new IOException("App." + id + ": Titel, Bilder/JPG and Daten must not be empty.");
+            if(id.isEmpty()||id.startsWith(".")||id.contains("/")||id.contains("\\")||id.matches(".*[\\p{Cntrl}].*"))
+                throw new IOException("Invalid app profile directory: "+id);
+            images = id+"/JPG";
+            data = id+"/TXT";
+            if(title.isEmpty())throw new IOException("App."+id+": Titel must not be empty.");
             String[] labels = values.getOrDefault("felder", DEFAULT_FIELDS).split(",", -1);
             if (labels.length > 7) throw new IOException("App." + id + ": Felder has more than seven positions.");
             fields = new String[7];
@@ -73,10 +74,6 @@ final class AppProfiles {
         }
         if (profiles.isEmpty()) {
             Map<String, String> legacy = new LinkedHashMap<>();
-            legacy.put("bilder", "ChaosBox/JPG");
-            legacy.put("daten", "ChaosBox/daten");
-            for (Map.Entry<String, Map<String, String>> entry : sections.entrySet())
-                if (entry.getKey().equalsIgnoreCase("Pfade")) legacy.putAll(entry.getValue());
             legacy.put("kategorie", oldCategories);
             profiles.add(new Profile("Chaosbox", legacy));
         }
@@ -211,14 +208,8 @@ final class AppProfiles {
             }
             if (!skip) {
                 String written = raw;
-                int equals = line.indexOf('=');
-                if (equals >= 0 && line.substring(0, equals).trim().equalsIgnoreCase("Daten")) {
-                    String configured = line.substring(equals + 1).trim();
-                    if ((current.equalsIgnoreCase("App.Chaosbox") || current.equalsIgnoreCase("App.Chaobox"))
-                            && configured.equalsIgnoreCase("ChaosBox/daten")) written = "Daten=ChaosBox/boxes";
-                    else if (current.equalsIgnoreCase("App.Bilderbox")
-                            && configured.equalsIgnoreCase("Bilderbox/daten")) written = "Daten=Bilderbox/boxes";
-                }
+                int equals=line.indexOf('=');
+                if(current.regionMatches(true,0,"App.",0,4)&&equals>=0&&Arrays.asList("jpg","bilder","daten").contains(line.substring(0,equals).trim().toLowerCase(Locale.ROOT)))continue;
                 result.append(written).append('\n');
             }
         }
@@ -226,11 +217,7 @@ final class AppProfiles {
             if (current.regionMatches(true, 0, "App.", 0, 4) && !hasCategory)
                 result.append("Kategorie=").append(oldCategories).append('\n');
         } else {
-            Profile legacy = parse(text).profiles.get(0);
-            result.append("\n[App]\nStandard=Chaosbox\n\n[App.Chaosbox]\nTitel=Chaosbox\nBilder=")
-                    .append(legacy.images).append("\nDaten=")
-                    .append(legacy.data.equalsIgnoreCase("ChaosBox/daten")
-                            ? "ChaosBox/boxes" : legacy.data)
+            result.append("\n[App]\nStandard=Chaosbox\n\n[App.Chaosbox]\nTitel=Chaosbox")
                     .append("\nFelder=").append(DEFAULT_FIELDS)
                     .append("\nKategorie=").append(oldCategories).append('\n');
         }

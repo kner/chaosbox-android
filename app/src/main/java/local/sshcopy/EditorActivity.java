@@ -94,6 +94,15 @@ public class EditorActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        if (!hasStorageAccess()) {
+            storageRequested = true;
+            requestStorageAccess();
+            return;
+        }
+        initializeUi();
+    }
+
+    private void initializeUi() {
         try {
             try (InputStream ignored = openSetupFileSafely()) { /* Create or migrate setup.ini. */ }
             selection = AppSettings.load(this);
@@ -122,7 +131,11 @@ public class EditorActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if (selection == null) return;
+        if (selection == null) {
+            if (!hasStorageAccess()) return;
+            initializeUi();
+            if (selection == null) return;
+        }
         if (hasStorageAccess()) {
             if (!busy) reloadProfile();
             refreshCategories();
@@ -270,7 +283,7 @@ public class EditorActivity extends Activity {
         synchronize.setContentDescription("(c) kner – synchronize manually");
         synchronize.setTooltipText("Synchronize; long press to resolve conflicts");
         synchronize.setOnClickListener(v -> synchronizeManually());
-        synchronize.setOnLongClickListener(v -> { new android.app.AlertDialog.Builder(this).setTitle("Synchronization").setItems(new String[]{"Conflicts", "Deleted entries"}, (dialog, which) -> showSyncVersions(which == 1)).show(); return true; });
+        synchronize.setOnLongClickListener(v -> { new android.app.AlertDialog.Builder(this).setTitle("Synchronization").setItems(new String[]{"Conflicts", "Deleted entries", "Repair filename conflicts"}, (dialog, which) -> {if(which==2)repairSyncFilenames();else showSyncVersions(which == 1);}).show(); return true; });
         header.addView(synchronize, new LinearLayout.LayoutParams(-2, dp(48)));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -516,7 +529,7 @@ public class EditorActivity extends Activity {
         if (!hasStorageAccess()) { requestStorageAccess(); return; }
         try {
             try (InputStream ignored = openOrCreateSetupFile()) { }
-            File file = new File(Environment.getExternalStorageDirectory(), Config.SETUP);
+            File file = Config.setup(this);
             EditText input = new EditText(this);
             input.setGravity(Gravity.TOP | Gravity.START);
             input.setInputType(android.text.InputType.TYPE_CLASS_TEXT
@@ -536,7 +549,7 @@ public class EditorActivity extends Activity {
                         FileOutputStream out = null;
                         try {
                             String content = StoragePaths.withDefaults(input.getText().toString());
-                            AppSettings.validate(AppProfiles.parse(content));
+                            AppSettings.validate(this,AppProfiles.parse(content));
                             out = target.startWrite();
                             out.write(content.getBytes(StandardCharsets.UTF_8));
                             target.finishWrite(out);
@@ -570,65 +583,10 @@ public class EditorActivity extends Activity {
     }
 
     private void initializeStorage() throws IOException {
-        File root = new File(Environment.getExternalStorageDirectory(), "ChaosBox");
-        StoragePaths paths = selection.paths;
-        for (File directory : new File[]{paths.images, paths.data, paths.index}) {
+        InstallationFiles.generation(Config.root(this));
+        StoragePaths paths=selection.paths;
+        for(File directory:new File[]{paths.images,paths.data,paths.index})
             java.nio.file.Files.createDirectories(directory.toPath());
-        }
-        if ((selection.profile.id.equalsIgnoreCase("Chaobox")
-                || selection.profile.id.equalsIgnoreCase("Chaosbox"))
-                && paths.images.equals(new File(root, "JPG").getCanonicalFile())
-                && paths.data.equals(new File(root, "boxes").getCanonicalFile())) {
-            android.content.SharedPreferences prefs = getSharedPreferences("initial-data", MODE_PRIVATE);
-            if (!prefs.getBoolean("jpg-and-boxes-restored-v2", false)) {
-                java.util.Set<String> knownImages = new java.util.HashSet<>();
-                for (File file : paths.imageFiles())
-                    knownImages.add(file.getName().toLowerCase(java.util.Locale.ROOT));
-                java.util.Set<String> knownBoxes = new java.util.HashSet<>();
-                for (File file : paths.jsonFiles())
-                    knownBoxes.add(file.getName().toLowerCase(java.util.Locale.ROOT));
-                restoreInitialAssets("initial/JPG", paths.images, knownImages);
-                restoreInitialAssets("initial/boxes", paths.data, knownBoxes);
-                if (!prefs.edit().putBoolean("jpg-and-boxes-restored-v2", true).commit())
-                    throw new IOException("Could not confirm initialization.");
-            }
-        }
-    }
-
-    private void restoreInitialAssets(String assetPath, File target, java.util.Set<String> knownNames)
-            throws IOException {
-        String[] children = getAssets().list(assetPath);
-        if (children != null && children.length > 0) {
-            for (String child : children)
-                restoreInitialAssets(assetPath + "/" + child, new File(target, child), knownNames);
-            return;
-        }
-        String name = target.getName().toLowerCase(java.util.Locale.ROOT);
-        if (knownNames.contains(name)) return;
-        copyInitialAssets(assetPath, target);
-        if (target.isFile()) knownNames.add(name);
-    }
-
-    private void copyInitialAssets(String assetPath, File target) throws IOException {
-        String[] children = getAssets().list(assetPath);
-        if (children != null && children.length > 0) {
-            java.nio.file.Files.createDirectories(target.toPath());
-            for (String child : children) copyInitialAssets(assetPath + "/" + child, new File(target, child));
-            return;
-        }
-        if (target.exists()) return;
-        InputStream asset;
-        try { asset = getAssets().open(assetPath); }
-        catch (java.io.FileNotFoundException e) { return; } // Empty asset directories are not packaged.
-        try (InputStream input = asset) {
-            java.nio.file.Files.createDirectories(target.getParentFile().toPath());
-            java.nio.file.Path temporary = java.nio.file.Files.createTempFile(target.getParentFile().toPath(), ".initial-", ".tmp");
-            try {
-                try (OutputStream output = java.nio.file.Files.newOutputStream(temporary)) { copy(input, output); }
-                // No replacement: existing user files always take precedence.
-                java.nio.file.Files.move(temporary, target.toPath());
-            } finally { java.nio.file.Files.deleteIfExists(temporary); }
-        }
     }
 
     private void initializeIndex() {
@@ -1090,6 +1048,37 @@ public class EditorActivity extends Activity {
             }).show();
     }
 
+    private void repairSyncFilenames() {
+        if(busy)return;
+        setBusy(true);
+        worker.execute(()->{
+            try {
+                SyncStore store=SyncSftp.store(selection.paths);
+                java.util.Map<String,java.util.List<JSONObject>> collisions=store.mediaFilenameConflicts();
+                String paths=String.join("\n",collisions.keySet());
+                runOnUiThread(()->{
+                    setBusy(false);
+                    if(collisions.isEmpty()){Toast.makeText(this,"No media filename conflicts.",Toast.LENGTH_LONG).show();return;}
+                    new android.app.AlertDialog.Builder(this).setTitle("Keep both media versions?")
+                        .setMessage("One object keeps its filename. Other objects get a unique _conflict_ filename. Both versions and their history are retained. Synchronize afterward to send the repair.\n\n"+paths)
+                        .setNegativeButton("Cancel",null).setPositiveButton("Keep both",(dialog,which)->{
+                            if(busy)return;
+                            setBusy(true);
+                            worker.execute(()->{
+                                try {
+                                    int renamed;
+                                    try(AutoCloseable lock=store.lock()){renamed=store.repairMediaFilenames();}
+                                    rebuildIndex();
+                                    final int count=renamed;
+                                    runOnUiThread(()->{setBusy(false);invalidateSynchronizedSelection();selectedLabel.setText(count+" media object(s) renamed; synchronize to send the repair.");});
+                                }catch(Exception e){runOnUiThread(()->{setBusy(false);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}
+                            });
+                        }).show();
+                });
+            }catch(Exception e){runOnUiThread(()->{setBusy(false);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}
+        });
+    }
+
     private void showSyncVersions(boolean trash) {
         if (busy) return;
         worker.execute(() -> {
@@ -1323,9 +1312,9 @@ public class EditorActivity extends Activity {
     }
 
     private InputStream openOrCreateSetupFile() throws IOException {
-        File dir = new File(Environment.getExternalStorageDirectory(), "ChaosBox/Setup");
+        File dir = Config.root(this);
         if (!dir.exists() && !dir.mkdirs()) throw new IOException("Could not create setup folder");
-        File setup = new File(dir, "setup.ini");
+        File setup = Config.setup(this);
         if (!setup.exists()) {
             try (InputStream asset = getAssets().open(Config.SETUP_ASSET); OutputStream output = new FileOutputStream(setup)) {
                 copy(asset, output);
@@ -1589,6 +1578,8 @@ public class EditorActivity extends Activity {
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(requestCode, permissions, results);
         if (requestCode == STORAGE_PERMISSION && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
+            if (selection == null) initializeUi();
+            if (selection == null) return;
             refreshCategories();
             initializeIndex();
         }

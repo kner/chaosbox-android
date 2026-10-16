@@ -19,6 +19,7 @@ public final class SyncStoreTest {
         switch(args[0]) {
             case "normalize": System.out.println(SyncStore.canonical(SyncStore.normalized(new JSONObject(args[2])))); break;
             case "capture": store.capture(); break;
+            case "repair-filenames": System.out.println(store.repairMediaFilenames()); break;
             case "checksums": System.out.println(SyncStore.canonical(store.checksums())); break;
             case "apply": System.out.println(store.apply().size()); break;
             case "delete": store.delete(new File(store.data,args[2]),Integer.parseInt(args[3]));break;

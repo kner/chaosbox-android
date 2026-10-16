@@ -67,8 +67,8 @@ public final class AppProfilesTest {
             throw new AssertionError("Multiline category accepted");
         } catch (IOException expected) { }
         String completed = AppProfiles.withDefaults(text);
-        check(completed.contains("Daten=ChaosBox/boxes"), "Older Chaosbox data path updated");
-        check(completed.contains("Daten=Bilderbox/boxes"), "Older Bilderbox data path updated");
+        check(!completed.contains("Daten="), "Legacy/custom data paths removed");
+        check(!completed.contains("JPG="), "Legacy/custom image paths removed");
         check(completed.contains("Kategorie=Fotos, Gemälde, Fotos"), "Existing profile category retained");
         check(completed.contains("[App.Archiv]"), "Other profile retained");
         check(AppProfiles.withDefaults(completed).equals(completed), "Existing profiles extended once");
@@ -77,7 +77,7 @@ public final class AppProfilesTest {
         check(AppProfiles.parse(converted).find("Chaosbox").categories.equals(java.util.Collections.singletonList("Audio")),
                 "Move old category to profile");
         check(!converted.contains("[Pfade]"), "Convert old section");
-        check(AppProfiles.parse(converted).find("Chaosbox").images.equals("Photos"), "Preserve old paths");
+        check(AppProfiles.parse(converted).find("Chaosbox").images.equals("Chaosbox/JPG"), "Ignore old external paths");
         check(AppProfiles.withDefaults(converted).equals(converted), "Idempotent conversion");
         String migrated = AppProfiles.withDefaults("[Kategorie]\nAudio\nElektro\n" + text);
         check(!migrated.contains("[Kategorie]"), "Remove old global list from profiled setup");
@@ -85,18 +85,16 @@ public final class AppProfilesTest {
                 "Copy old categories to profile lacking a list");
         check(AppProfiles.parse(migrated).find("Bilderbox").categories.equals(java.util.Arrays.asList("Fotos", "Gemälde")),
                 "Do not replace profile's own list");
-        try {
-            AppProfiles.parse("[App.Bad]\nJPG=Photos\n");
-            throw new AssertionError("Missing data path accepted");
-        } catch (IOException expected) { }
+        check(AppProfiles.parse("[App.Bad]\nJPG=/outside\nDaten=../old\n").find("Bad").data.equals("Bad/TXT"),"Folders are fixed inside the installation");
+        try {AppProfiles.parse("[App.../outside]\n");throw new AssertionError("Unsafe profile accepted");}catch(IOException expected){}
         Path root = Files.createTempDirectory("app-profiles-");
         try {
             StoragePaths original = StoragePaths.forProfile(root.toFile(), profiles.find("Chaobox"));
             StoragePaths other = StoragePaths.forProfile(root.toFile(), pictures);
             check(!original.index.equals(other.index), "Separate indices");
-            check(other.legacyData.equals(root.resolve("Bilderbox/daten").toFile().getCanonicalFile()),
+            check(other.legacyData.equals(root.resolve("Bilderbox/TXT").toFile().getCanonicalFile()),
                     "Bilderbox reads only its own legacy data folder");
-            check(other.data.equals(root.resolve("Bilderbox/boxes").toFile().getCanonicalFile()),
+            check(other.data.equals(root.resolve("Bilderbox/TXT").toFile().getCanonicalFile()),
                     "Bilderbox uses its migrated boxes folder");
             check(other.legacyImages.equals(other.images), "Other profiles never import Chaosbox images");
             StoragePaths snapshot = StoragePaths.snapshot(root.toFile(), other.images.getPath(), other.data.getPath(), pictures.id);

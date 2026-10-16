@@ -300,13 +300,69 @@ final class SyncStore {
         File target=new File(root,"trash/"+UUID.randomUUID()+"/"+file.getName());Files.createDirectories(target.getParentFile().toPath());
         Files.move(file.toPath(),target.toPath(),StandardCopyOption.ATOMIC_MOVE);
     }
+    Map<String,List<JSONObject>> mediaFilenameConflicts() throws Exception {
+        Map<String,List<JSONObject>> byPath=new TreeMap<>();
+        for(List<JSONObject> versions:heads(operations()).values())if(versions.size()==1) {
+            JSONObject op=versions.get(0);
+            if(op.getString("kind").equals("media")&&op.getString("action").equals("put"))
+                byPath.computeIfAbsent(op.getString("path"),key->new ArrayList<>()).add(op);
+        }
+        byPath.entrySet().removeIf(entry->entry.getValue().size()<2);
+        return byPath;
+    }
+    int repairMediaFilenames() throws Exception {
+        Map<String,List<JSONObject>> collisions=mediaFilenameConflicts();
+        Map<String,JSONObject> operations=operations();
+        Map<String,String> plan=new TreeMap<>();Set<String> occupied=new HashSet<>();
+        for(List<JSONObject> versions:heads(operations).values())for(JSONObject op:versions)
+            if(op.getString("kind").equals("media")&&op.getString("action").equals("put"))occupied.add(op.getString("path"));
+        JSONObject materialized=materialized();List<File> displaced=new ArrayList<>();
+        // Validate every payload and local file before writing any rename operations.
+        for(Map.Entry<String,List<JSONObject>> entry:collisions.entrySet()) {
+            List<JSONObject> versions=entry.getValue();
+            versions.sort(Comparator.comparing(op->op.optString("id")));
+            Set<String> known=new HashSet<>();
+            for(JSONObject old:operations.values())if(old.getString("kind").equals("media")&&old.has("blob"))
+                for(JSONObject version:versions)if(old.getString("id").equals(version.getString("id"))) {
+                    known.add(old.getString("blob"));known.add(materialized.optString(old.getString("revision")));
+                }
+            for(JSONObject op:versions) {
+                File blob=new File(root,"blobs/"+op.getString("blob")+".blob");
+                if(Files.isSymbolicLink(blob.toPath())||!blob.isFile()||!hash(blob).equals(op.getString("blob")))
+                    throw new IOException("Missing or corrupt media payload: "+entry.getKey());
+            }
+            File original=safePath("media",entry.getKey());
+            if(original.exists()) {
+                if(!original.isFile()||!known.contains(hash(original)))throw new IOException("Untracked file retained: "+original);
+                displaced.add(original);
+            }
+            for(int i=1;i<versions.size();i++) {
+                JSONObject op=versions.get(i);String old=entry.getKey();int dot=old.lastIndexOf('.');
+                String stem=old.substring(old.lastIndexOf('/')+1,dot),extension=old.substring(dot);
+                String suffix="_conflict_"+op.getString("id");
+                while((stem+suffix+extension).getBytes(StandardCharsets.UTF_8).length>240&&!stem.isEmpty())
+                    stem=stem.substring(0,stem.offsetByCodePoints(stem.length(),-1));
+                String prefix=old.substring(0,old.lastIndexOf('/')+1)+stem+suffix;
+                String renamed=prefix+extension;int number=2;
+                while(occupied.contains(renamed)||safePath("media",renamed).exists())renamed=prefix+"_"+(number++)+extension;
+                safePath("media",renamed);occupied.add(renamed);plan.put(op.getString("revision"),renamed);
+            }
+        }
+        // Keep any materialized original in the local trash; reconstruct both identities from blobs.
+        for(File original:displaced)trash(original);
+        for(Map.Entry<String,String> entry:plan.entrySet()) {
+            JSONObject op=operations.get(entry.getKey());JSONArray parents=new JSONArray();parents.put(op.getString("revision"));
+            issue("media",entry.getValue(),op.getJSONObject("record"),new File(root,"blobs/"+op.getString("blob")+".blob"),false,parents,0);
+        }
+        apply();return plan.size();
+    }
     Map<String,List<JSONObject>> apply() throws Exception {
         Map<String,JSONObject> operations=operations();Map<String,List<JSONObject>> heads=heads(operations),conflicts=new TreeMap<>();
         for(Map.Entry<String,List<JSONObject>> entry:heads.entrySet())if(entry.getValue().size()>1&&!entry.getValue().get(0).getString("kind").equals("device"))conflicts.put(entry.getKey(),entry.getValue());
         JSONObject conflictJson=new JSONObject();for(Map.Entry<String,List<JSONObject>> e:conflicts.entrySet())conflictJson.put(e.getKey(),new JSONArray(e.getValue()));
         atomic(new File(root,"conflicts.json"),(canonical(conflictJson)+"\n").getBytes(StandardCharsets.UTF_8));
         Map<String,String> destinations=new HashMap<>();
-        for(Map.Entry<String,List<JSONObject>> e:heads.entrySet())if(e.getValue().size()==1){JSONObject op=e.getValue().get(0);if(op.getString("kind").equals("media")&&op.getString("action").equals("put")){String previous=destinations.put(op.getString("path"),e.getKey());if(previous!=null&&!previous.equals(e.getKey()))throw new IOException("Media filename conflict; rename one version: "+op.getString("path"));}}
+        for(Map.Entry<String,List<JSONObject>> e:heads.entrySet())if(e.getValue().size()==1){JSONObject op=e.getValue().get(0);if(op.getString("kind").equals("media")&&op.getString("action").equals("put")){String previous=destinations.put(op.getString("path"),e.getKey());if(previous!=null&&!previous.equals(e.getKey()))throw new IOException("Media filename conflict: "+op.getString("path")+". Long press synchronization and choose Repair filename conflicts to keep both.");}}
         for(Map.Entry<String,List<JSONObject>> entry:heads.entrySet()) {
             if(conflicts.containsKey(entry.getKey()))continue;JSONObject op=entry.getValue().get(0);
             if(!op.getString("kind").equals("media"))continue;
@@ -314,6 +370,7 @@ final class SyncStore {
             for(JSONObject old:operations.values()) {
                 if(!entry.getKey().equals(old.getString("id")))continue;
                 if(op.getString("action").equals("put")&&old.getString("path").equals(op.getString("path")))continue;
+                if(destinations.containsKey(old.getString("path"))&&!entry.getKey().equals(destinations.get(old.getString("path"))))continue;
                 File file=safePath("media",old.getString("path"));if(file.exists()&&known.contains(hash(file)))trash(file);
             }
             if(op.getString("action").equals("put")) {

@@ -14,7 +14,7 @@ public final class StoragePathsTest {
         try {
             StoragePaths paths = StoragePaths.parse(root.toFile(),
                     "[App.Chaosbox]\nJPG=ChaosBox/JPG\nDaten=ChaosBox/boxes\n");
-            check(paths.data.equals(root.resolve("ChaosBox/boxes").toFile()), "Box root");
+            check(paths.data.equals(root.resolve("Chaosbox/TXT").toFile()), "Box root");
             check(paths.canUpload(new File(paths.data, "nested/box.json")), "ChaosBox upload allowed");
             check(!paths.canUpload(root.resolve("Bilderbox/boxes/box.json").toFile()), "Bilderbox upload excluded");
             check(!paths.canUpload(root.resolve("ChaosBox-other/box.json").toFile()), "Sibling prefix excluded");
@@ -67,11 +67,7 @@ public final class StoragePathsTest {
             check(paths.jsonFiles().contains(formerData), "Previously sorted box remains readable");
             check(paths.migrate(file -> "Audio").isEmpty(), "No JSON migration warnings");
             check(formerData.isFile(), "Previously sorted box never moved");
-            try {
-                StoragePaths.parse(root.toFile(),
-                        "[App.Chaosbox]\nJPG=ChaosBox/JPG\nDaten=ChaosBox/data\n");
-                throw new AssertionError("Index mixed with source records");
-            } catch (java.io.IOException expected) { }
+            try {StoragePaths.snapshot(root.toFile(),"../outside","TXT","test");throw new AssertionError("External folder accepted");}catch(java.io.IOException expected){}
             System.out.println("PASS: image categories, unmoved boxes, nested lookup, existing records");
         } finally {
             try (java.util.stream.Stream<Path> files = Files.walk(root)) {

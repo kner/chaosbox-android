@@ -29,6 +29,7 @@ android {
     defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 7; versionName '2.5' }
     defaultConfig {
         if (installationName) applicationIdSuffix ".installation.${installationName}"
+        resValue 'string', 'installation_directory', installationName ?: 'ChaosBox-default'
         resValue 'color', 'installation_icon_background', installationName ? iconColor(0.52f) : '#173F5F'
         resValue 'color', 'installation_icon_accent', installationName ? iconColor(0.85f) : '#17A398'
         manifestPlaceholders = [appLabel: installationName ? "ChaosBox (${installationName})" : 'ChaosBox']

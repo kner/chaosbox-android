@@ -9,30 +9,14 @@ import java.util.stream.Stream;
 /** Storage layout for one selected App profile. */
 final class StoragePaths {
     final File images, data, legacyImages, legacyData, index;
-    private final File uploadRoot;
 
     private StoragePaths(File storage, String imagePath, String dataPath, String profileId) throws IOException {
-        uploadRoot = new File(storage.getCanonicalFile(), "ChaosBox");
         images = resolve(storage, imagePath);
-        File configuredData = resolve(storage, dataPath);
-        File oldImages = new File(storage, "ChaosBox/JPG").getCanonicalFile();
-        File oldData = new File(storage, "ChaosBox/daten").getCanonicalFile();
-        File boxes = new File(storage, "ChaosBox/boxes").getCanonicalFile();
-        File pictureImages = new File(storage, "Bilderbox/JPG").getCanonicalFile();
-        File pictureData = new File(storage, "Bilderbox/daten").getCanonicalFile();
-        File pictureBoxes = new File(storage, "Bilderbox/boxes").getCanonicalFile();
-        boolean chaos = (profileId.equalsIgnoreCase("Chaobox") || profileId.equalsIgnoreCase("Chaosbox"))
-                && images.equals(oldImages);
-        boolean pictures = profileId.equalsIgnoreCase("Bilderbox") && images.equals(pictureImages);
-        data = chaos && configuredData.equals(oldData) ? boxes
-                : pictures && configuredData.equals(pictureData) ? pictureBoxes : configuredData;
+        data = resolve(storage, dataPath);
         legacyImages = images;
-        // Previously sorted JSON remains readable where it is; never move it again.
-        legacyData = chaos && data.equals(boxes) ? oldData
-                : pictures && data.equals(pictureBoxes) ? pictureData : data;
-        index = chaos && data.equals(boxes) ? new File(storage, "ChaosBox/data").getCanonicalFile()
-                : new File(storage, "ChaosBox/.indices/" + profileKey(profileId)).getCanonicalFile();
-        for (String reserved : new String[]{"ChaosBox/data", "ChaosBox/.indices", "ChaosBox/Setup"}) {
+        legacyData = data;
+        index = resolve(storage, ".indices/" + profileKey(profileId));
+        for (String reserved : new String[]{".indices", ".state", "setup.ini", ".installation-id"}) {
             File directory = new File(storage, reserved).getCanonicalFile();
             if (overlaps(images, directory) || overlaps(data, directory))
                 throw new IOException("Image and data folders overlap an internal app folder: " + directory);
@@ -48,7 +32,10 @@ final class StoragePaths {
 
     private static File resolve(File storage, String value) throws IOException {
         File file = new File(value);
-        return (file.isAbsolute() ? file : new File(storage, value)).getCanonicalFile();
+        File resolved=(file.isAbsolute() ? file : new File(storage, value)).getCanonicalFile();
+        if(!resolved.toPath().startsWith(storage.getCanonicalFile().toPath())||resolved.equals(storage.getCanonicalFile()))
+            throw new IOException("Data folder must remain inside the installation directory: "+value);
+        return resolved;
     }
 
     static StoragePaths forProfile(File storage, AppProfiles.Profile profile) throws IOException {
@@ -131,7 +118,7 @@ final class StoragePaths {
     }
 
     boolean canUpload(File file) throws IOException {
-        return file.getCanonicalFile().toPath().startsWith(uploadRoot.toPath());
+        return file.getCanonicalFile().toPath().startsWith(images.toPath())||file.getCanonicalFile().toPath().startsWith(data.toPath());
     }
 
     interface ImageCategory { String read(File image) throws Exception; }

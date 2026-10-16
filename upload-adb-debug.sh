@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
+invocation_dir="$PWD"
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
 usage() {
-    echo "Verwendung: $0 [--installdir NAME] [GERAETE-SERIENNUMMER]"
+    echo "Verwendung: $0 [--installdir NAME] [--desktop-install PFAD | --installation ID] [--remote-profile NAME] [--ssh-profile NAME] [GERAETE-SERIENNUMMER]"
     echo "Ohne NAME: installiert SSHCopy-debug.apk. Vorher ./build-apk.sh ausführen."
     echo "Mit NAME: baut und installiert eine separate App ChaosBox (NAME)."
+    echo "--desktop-install PFAD: Desktop-ID aus PFAD/setup.ini ableiten; Android setup.ini aktualisieren."
+    echo "--installation ID: Desktop-ID direkt setzen. --remote-profile NAME: Desktop-Profil wählen."
+    echo "--ssh-profile NAME: nur [SSH.NAME] statt des gemeinsamen [SSH]-Abschnitts ändern."
 }
 installation=""
+sync_args=()
 serial="${ANDROID_SERIAL:-}"
 serial_set=false
 while (( $# )); do
@@ -24,6 +29,13 @@ while (( $# )); do
                 exit 1
             fi
             ;;
+        --desktop-install|--installation|--remote-profile|--ssh-profile)
+            if (( $# < 2 )) || [[ -z "$2" || "$2" == --* ]]; then usage >&2; exit 1; fi
+            value="$2"
+            if [[ "$1" == --desktop-install && "$value" != /* ]]; then value="$invocation_dir/$value"; fi
+            sync_args+=("$1" "$value")
+            shift 2
+            ;;
         -*) usage >&2; exit 1 ;;
         *)
             if "$serial_set"; then usage >&2; exit 1; fi
@@ -33,6 +45,9 @@ while (( $# )); do
             ;;
     esac
 done
+if (( ${#sync_args[@]} )); then
+    /usr/bin/python3 "$PWD/configure-adb-sync.py" "${sync_args[@]}" --android-installdir "${installation:-ChaosBox-default}" --check
+fi
 apk="$PWD/SSHCopy-debug.apk"
 if [[ -n "$installation" ]]; then
     ./build-apk.sh --installdir "$installation"
@@ -69,3 +84,6 @@ if ! "$adb_bin" -s "$serial" install -r "$apk"; then
     exit 1
 fi
 echo "Debug-APK auf $serial installiert."
+if (( ${#sync_args[@]} )); then
+    /usr/bin/python3 "$PWD/configure-adb-sync.py" "${sync_args[@]}" --android-installdir "${installation:-ChaosBox-default}" --adb "$adb_bin" --serial "$serial"
+fi

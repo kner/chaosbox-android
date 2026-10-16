@@ -12,7 +12,7 @@ public final class SftpSyncTest {
         session.setConfig("StrictHostKeyChecking","yes");session.setConfig("PreferredAuthentications","publickey");
         session.connect(10000);
         try {ChannelSftp sftp=(ChannelSftp)session.openChannel("sftp");sftp.connect(10000);
-            try(AutoCloseable lock=store.lock()){SyncSftp.exchange(store,sftp,"shared/TXT/.chaosbox-sync",()->{},message->{});System.out.println(store.apply().size());}
+            try(AutoCloseable lock=store.lock()){SyncSftp.exchange(store,sftp,args.length>4?args[4]:"shared/TXT/.chaosbox-sync",()->{},message->{});System.out.println(store.apply().size());}
             finally{sftp.disconnect();}
         } finally{session.disconnect();}
     }

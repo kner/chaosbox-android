@@ -10,6 +10,47 @@ import org.json.*;
 /** Union immutable journal files over SFTP. Never infer deletion from file absence. */
 final class SyncSftp {
     interface Check {void run() throws Exception;}
+    interface Transfer<T> {void run(T item,ChannelSftp channel) throws Exception;}
+    /** Each worker owns its SFTP channel; the main channel and transfer lock stay on the caller. */
+    static <T> void transfer(List<T> items,ChannelSftp main,Check check,Transfer<T> action) throws Exception {
+        if(items.size()<=4) {for(T item:items){check.run();action.run(item,main);}return;}
+        List<ChannelSftp> channels=new ArrayList<>();
+        java.util.concurrent.ExecutorService pool=null;
+        try {
+            for(int i=0;i<Math.min(4,items.size());i++) {
+                check.run();ChannelSftp channel=null;
+                try {channel=(ChannelSftp)main.getSession().openChannel("sftp");channel.connect(15000);channels.add(channel);}
+                catch(JSchException unavailable){if(channel!=null)channel.disconnect();break;}
+            }
+            if(channels.isEmpty()){for(T item:items){check.run();action.run(item,main);}return;}
+            pool=java.util.concurrent.Executors.newFixedThreadPool(channels.size());
+            java.util.concurrent.atomic.AtomicInteger next=new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.CompletionService<Void> completed=new java.util.concurrent.ExecutorCompletionService<>(pool);
+            for(ChannelSftp channel:channels)completed.submit(()->{
+                for(int index;(index=next.getAndIncrement())<items.size();) {
+                    if(Thread.currentThread().isInterrupted())throw new InterruptedException("Transfer stopped");
+                    check.run();action.run(items.get(index),channel);
+                }
+                return null;
+            });
+            for(int i=0;i<channels.size();i++) {
+                try{completed.take().get();}
+                catch(java.util.concurrent.ExecutionException error) {
+                    Throwable cause=error.getCause();if(cause instanceof Exception)throw (Exception)cause;throw new IOException(cause);
+                }
+            }
+        }finally {
+            if(pool!=null)pool.shutdownNow();
+            for(ChannelSftp channel:channels)channel.disconnect();
+            // Join workers before releasing transfer.lock or publishing a checksum/checkpoint.
+            if(pool!=null) {
+                boolean interrupted=false;
+                while(true)try{if(pool.awaitTermination(1,java.util.concurrent.TimeUnit.SECONDS))break;}
+                catch(InterruptedException error){interrupted=true;}
+                if(interrupted)Thread.currentThread().interrupt();
+            }
+        }
+    }
     static void mkdirs(ChannelSftp sftp,String path) throws Exception {
         if(path.isEmpty()||path.equals(".")||path.equals("/"))return;
         int parent=path.lastIndexOf('/');if(parent>0)mkdirs(sftp,path.substring(0,parent));
@@ -156,7 +197,7 @@ final class SyncSftp {
                     if(useIndex)log.accept("Prüfsummenindex geprüft; nur fehlende Änderungen herunterladen.");
                 }
                 log.accept("Checking remote "+folder+" ("+entries.size()+" entries) …");
-                int downloaded=0;
+                List<ChannelSftp.LsEntry> pending=new ArrayList<>();
                 Set<String> remoteNames=new HashSet<>();remoteFiles.put(folder,remoteNames);
                 for(ChannelSftp.LsEntry entry:entries) {
                     check.run();String name=entry.getFilename();
@@ -166,14 +207,23 @@ final class SyncSftp {
                     File known=new File(store.root,folder+"/"+name);
                     if(folder.equals("ops")&&useIndex&&localIndex.getJSONObject("ops").has(name)&&localIndex.getJSONObject("ops").getString(name).equals(serverIndex.getJSONObject("ops").getString(name)))continue;
                     if(folder.equals("blobs")&&known.isFile()&&!Files.isSymbolicLink(known.toPath())&&SyncStore.hash(known).equals(name.substring(0,name.length()-suffix.length())))continue;
-                    log.accept("Downloading "+folder+" "+(++downloaded)+": "+name);
+                    pending.add(entry);
+                }
+                java.util.concurrent.atomic.AtomicInteger downloaded=new java.util.concurrent.atomic.AtomicInteger();
+                Transfer<ChannelSftp.LsEntry> download=(entry,reader)->{
+                    String name=entry.getFilename();
+                    log.accept("Downloading "+folder+" "+downloaded.incrementAndGet()+"/"+pending.size()+": "+name);
                     try(OutputStream out=Files.newOutputStream(new File(local,name).toPath())) {
-                        sftp.get(directory+"/"+name,out,new SftpProgressMonitor(){
-                            public void init(int op,String src,String dst,long max){}public boolean count(long n){try{check.run();return true;}catch(Exception e){return false;}}public void end(){}
+                        reader.get(directory+"/"+name,out,new SftpProgressMonitor(){
+                            public void init(int op,String src,String dst,long max){}public boolean count(long n){try{check.run();return !Thread.currentThread().isInterrupted();}catch(Exception e){return false;}}public void end(){}
                         });
                     }
                     check.run();
-                }
+                };
+                if(folder.equals("ops")) {
+                    if(pending.size()>4)log.accept("Downloading changes over up to 4 parallel SFTP channels …");
+                    transfer(pending,sftp,check,download);
+                }else for(ChannelSftp.LsEntry entry:pending)download.run(entry,sftp);
             }
             check.run();log.accept("Validating downloaded journal and media …");
             store.importFrom(staging.toFile());
@@ -185,16 +235,24 @@ final class SyncSftp {
             for(String folder:new String[]{"blobs","ops"}) {
                 String suffix=folder.equals("blobs")?".blob":".op",directory=remote+"/"+folder;
                 File[] files=new File(store.root,folder).listFiles((d,n)->n.endsWith(suffix));if(files==null)continue;Arrays.sort(files);
-                for(File file:files) {
-                    check.run();if(remoteFiles.get(folder).contains(file.getName()))continue;
-                    log.accept("Uploading "+folder+": "+file.getName());
-                    String temporary=directory+"/."+UUID.randomUUID()+".tmp";
+                List<File> pending=new ArrayList<>();
+                for(File file:files)if(!remoteFiles.get(folder).contains(file.getName()))pending.add(file);
+                java.util.concurrent.atomic.AtomicInteger uploaded=new java.util.concurrent.atomic.AtomicInteger();
+                Transfer<File> upload=(file,writer)->{
+                    check.run();log.accept("Uploading "+folder+" "+uploaded.incrementAndGet()+"/"+pending.size()+": "+file.getName());
+                    String temporary=directory+"/."+UUID.randomUUID()+".tmp";boolean published=false;
                     try {
-                        sftp.put(file.getPath(),temporary,new SftpProgressMonitor(){
-                            public void init(int op,String src,String dst,long max){}public boolean count(long n){try{check.run();return true;}catch(Exception e){return false;}}public void end(){}
-                        });check.run();sftp.rename(temporary,directory+"/"+file.getName());
-                    } finally {try{sftp.rm(temporary);}catch(SftpException ignored){}}
-                }
+                        writer.put(file.getPath(),temporary,new SftpProgressMonitor(){
+                            public void init(int op,String src,String dst,long max){}public boolean count(long n){try{check.run();return !Thread.currentThread().isInterrupted();}catch(Exception e){return false;}}public void end(){}
+                        });check.run();
+                        if(Thread.currentThread().isInterrupted())throw new InterruptedException("Transfer stopped");
+                        writer.rename(temporary,directory+"/"+file.getName());published=true;
+                    } finally {if(!published)try{writer.rm(temporary);}catch(SftpException ignored){}}
+                };
+                if(folder.equals("ops")) {
+                    if(pending.size()>4)log.accept("Uploading changes over up to 4 parallel SFTP channels …");
+                    transfer(pending,sftp,check,upload);
+                }else for(File file:pending)upload.run(file,sftp);
             }
             store.heads(store.operations());
             publishImages(store,sftp,remote,check,log);
@@ -229,8 +287,9 @@ final class SyncSftp {
         return store;
     }
     static Map<String,String> settings(android.content.Context context) throws Exception {
-        File file=new File(android.os.Environment.getExternalStorageDirectory(),Config.SETUP);String text;
-        if(file.isFile())text=LocalData.read(file);else try(InputStream in=context.getAssets().open(Config.SETUP_ASSET)){ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buffer=new byte[8192];for(int n;(n=in.read(buffer))!=-1;)out.write(buffer,0,n);text=out.toString("UTF-8");}
+        File file=Config.setup(context);
+        if(!file.isFile())throw new IOException("Fresh installation: configure Installation in "+file+" before synchronization.");
+        String text=LocalData.read(file);
         Map<String,String> result=new HashMap<>();result.put("host",Config.HOST);result.put("port",Integer.toString(Config.PORT));result.put("user",Config.USER);
         String profile=AppSettings.load(context).profile.id;
         Map<String,String> overrides=new HashMap<>();
