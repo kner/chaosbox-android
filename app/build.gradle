@@ -27,7 +27,7 @@ android {
     }
     compileSdk 35
     buildFeatures { buildConfig true }
-    defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 20; versionName rootProject.file('VERSION').text.trim() }
+    defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 22; versionName rootProject.file('VERSION').text.trim() }
     defaultConfig {
         if (installationName) applicationIdSuffix ".installation.${installationName}"
         resValue 'string', 'installation_directory', installationName ?: 'ChaosBox-default'
