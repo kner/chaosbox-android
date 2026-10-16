@@ -85,6 +85,8 @@ public class EditorActivity extends Activity {
     private android.widget.ImageButton openJson;
     private android.widget.ImageButton choose, setup;
     private EditText comment;
+    private Button shrinkComment, growComment;
+    private int commentLines = 5;
     private android.widget.ImageButton save;
     private ProgressBar progress;
     private final List<String> categories = new ArrayList<>();
@@ -270,7 +272,7 @@ public class EditorActivity extends Activity {
         profileParams.setMarginEnd(dp(8));
         header.addView(profileTitle, profileParams);
         synchronize = new Button(this);
-        synchronize.setText("(c) kner");
+        synchronize.setText("(c) kner.at · " + BuildConfig.VERSION_NAME);
         synchronize.setTextSize(12);
         synchronize.setAllCaps(false);
         synchronize.setSingleLine(true);
@@ -280,7 +282,7 @@ public class EditorActivity extends Activity {
         synchronize.setMinWidth(0);
         synchronize.setMinimumWidth(0);
         synchronize.setPadding(dp(10), 0, dp(10), 0);
-        synchronize.setContentDescription("(c) kner – synchronize manually");
+        synchronize.setContentDescription("(c) kner.at " + BuildConfig.VERSION_NAME + " – synchronize manually");
         synchronize.setTooltipText("Synchronize; long press to resolve conflicts");
         synchronize.setOnClickListener(v -> synchronizeManually());
         synchronize.setOnLongClickListener(v -> { new android.app.AlertDialog.Builder(this).setTitle("Synchronization").setItems(new String[]{"Conflicts", "Deleted entries", "Repair filename conflicts"}, (dialog, which) -> {if(which==2)repairSyncFilenames();else showSyncVersions(which == 1);}).show(); return true; });
@@ -415,11 +417,23 @@ public class EditorActivity extends Activity {
         category.setCompoundDrawablesWithIntrinsicBounds(0, 0, android.R.drawable.arrow_down_float, 0);
         root.addView(category, matchWrap());
         fieldViews[4] = category;
-        addFieldTitle(root, "Comment", 5);
-        // Inflate scrollbar attributes so Android initializes its scrollbar drawable at construction.
-        comment = (EditText) getLayoutInflater().inflate(R.layout.comment_input, root, false);
-        root.addView(comment);
-        fieldViews[5] = comment;
+        packageField = field(root, "Package", 6);
+        LinearLayout commentColumn = new LinearLayout(this);
+        commentColumn.setOrientation(LinearLayout.VERTICAL);
+        root.addView(commentColumn, matchWrap());
+        LinearLayout commentHeader = new LinearLayout(this);
+        commentHeader.setGravity(Gravity.CENTER_VERTICAL);
+        commentColumn.addView(commentHeader, matchWrap());
+        fieldTitles[5] = text("Comment", 13, Color.DKGRAY);
+        commentHeader.addView(fieldTitles[5], new LinearLayout.LayoutParams(0, -2, 1));
+        shrinkComment = commentSizeButton(commentHeader, "−", "Shrink comment field", -2);
+        growComment = commentSizeButton(commentHeader, "+", "Enlarge comment field", 2);
+        // Keep schema/config indices unchanged; only the visual order changes.
+        comment = (EditText) getLayoutInflater().inflate(R.layout.comment_input, commentColumn, false);
+        commentLines = Math.max(2, Math.min(30, getPreferences(MODE_PRIVATE).getInt("commentLines", 5)));
+        comment.setLines(commentLines);
+        commentColumn.addView(comment);
+        fieldViews[5] = commentColumn;
         comment.setOnTouchListener((view, event) -> {
             boolean scrolling = view.canScrollVertically(-1) || view.canScrollVertically(1);
             int action = event.getActionMasked();
@@ -431,8 +445,6 @@ public class EditorActivity extends Activity {
             }
             return false; // Keep the EditText's normal scrolling, selection and editing.
         });
-        packageField = field(root, "Package", 6);
-
         progress = new ProgressBar(this);
         progress.setVisibility(View.GONE);
         LinearLayout.LayoutParams progressParams = new LinearLayout.LayoutParams(dp(36), dp(36));
@@ -446,6 +458,58 @@ public class EditorActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.addView(root);
         return scroll;
+    }
+
+    private Button commentSizeButton(LinearLayout header, String label, String description, int delta) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setTextSize(16);
+        button.setMinWidth(0);
+        button.setMinimumWidth(0);
+        button.setPadding(0, 0, 0, 0);
+        button.setContentDescription(description);
+        button.setTooltipText(description);
+        button.setOnClickListener(v -> {
+            if (busy) return;
+            commentLines = Math.max(2, Math.min(30, commentLines + delta));
+            comment.setLines(commentLines);
+            getPreferences(MODE_PRIVATE).edit().putInt("commentLines", commentLines).apply();
+            comment.requestLayout();
+        });
+        header.addView(button, new LinearLayout.LayoutParams(dp(44), dp(40)));
+        return button;
+    }
+
+    private void selectCommentSearchMatch() {
+        if (lastSearch == null || !selection.profile.visible(5)) return;
+        String text = comment.getText().toString();
+        // These query fields also search the comment; prioritize its own query.
+        for (int index : new int[]{5, 2, 3, 4}) {
+            if (!selection.profile.visible(index) || lastSearch[index].isEmpty()) continue;
+            java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(lastSearch[index],
+                    java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE).matcher(text);
+            while (matcher.find()) {
+                if (matcher.start() == matcher.end()) continue;
+                final int start = matcher.start(), end = matcher.end();
+                comment.requestFocus();
+                comment.setSelection(start, end);
+                android.view.inputmethod.InputMethodManager keyboard =
+                        (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (keyboard != null) keyboard.hideSoftInputFromWindow(comment.getWindowToken(), 0);
+                comment.post(() -> {
+                    if (!comment.hasFocus() || !text.equals(comment.getText().toString())) return;
+                    comment.bringPointIntoView(start);
+                    android.text.Layout layout = comment.getLayout();
+                    if (layout != null) {
+                        int line = layout.getLineForOffset(start);
+                        int top = comment.getTotalPaddingTop() + layout.getLineTop(line) - comment.getScrollY();
+                        comment.requestRectangleOnScreen(new android.graphics.Rect(0, top, comment.getWidth(),
+                                top + layout.getLineBottom(line) - layout.getLineTop(line)), false);
+                    }
+                });
+                return;
+            }
+        }
     }
 
     private android.widget.ImageButton icon(LinearLayout row, int drawable, String label, View.OnClickListener action) {
@@ -804,6 +868,7 @@ public class EditorActivity extends Activity {
         }
         setSearchMode(false);
         applyRecord(selected);
+        selectCommentSearchMatch();
         beforeSearch = null;
     }
 
@@ -1610,6 +1675,8 @@ public class EditorActivity extends Activity {
         box.setEnabled(!busy);
         category.setEnabled(!busy);
         comment.setEnabled(!busy);
+        shrinkComment.setEnabled(!busy);
+        growComment.setEnabled(!busy);
         amount.setEnabled(!busy);
         decreaseAmount.setEnabled(!busy && !searchMode);
         increaseAmount.setEnabled(!busy && !searchMode);
