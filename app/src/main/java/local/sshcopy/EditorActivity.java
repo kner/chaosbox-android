@@ -290,11 +290,11 @@ public class EditorActivity extends Activity {
         header.addView(synchronize, new LinearLayout.LayoutParams(-2, dp(48)));
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
+        save = icon(actions, android.R.drawable.ic_menu_save, "Save data", v -> saveImage());
+        save.setEnabled(true);
         choose = icon(actions, android.R.drawable.ic_menu_gallery, "Select JPG, PNG or MP4", v -> chooseImage());
         openJson = icon(actions, android.R.drawable.ic_menu_agenda, "Open JSON", v -> openJson());
         search = icon(actions, android.R.drawable.ic_menu_search, "Search", v -> searchClicked());
-        save = icon(actions, android.R.drawable.ic_menu_save, "Save data", v -> saveImage());
-        save.setEnabled(true);
         View deleteAction = icon(actions, android.R.drawable.ic_menu_delete, "Delete selected entry; long press to delete the whole JSON box", v -> deleteSelected());
         deleteAction.setOnLongClickListener(v -> { deleteWholeBox(); return true; });
         setup = icon(actions, android.R.drawable.ic_menu_preferences, "Edit setup", v -> editSetup());
