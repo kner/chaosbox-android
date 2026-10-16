@@ -87,6 +87,7 @@ public class EditorActivity extends Activity {
     private EditText comment;
     private Button shrinkComment, growComment;
     private int commentLines = 5;
+    private final java.util.Map<EditText, android.graphics.drawable.Drawable> normalFieldBackgrounds = new java.util.IdentityHashMap<>();
     private android.widget.ImageButton save;
     private ProgressBar progress;
     private final List<String> categories = new ArrayList<>();
@@ -773,7 +774,23 @@ public class EditorActivity extends Activity {
         search.setContentDescription(enabled ? "Run search" : "Search");
         search.setTooltipText(enabled ? "Run search" : "Search");
         if (!enabled) { refreshDevices(); refreshCategories(); }
-        for (EditText field : inputFields()) field.setError(null);
+        for (EditText field : inputFields()) {
+            field.setError(null);
+            if (!normalFieldBackgrounds.containsKey(field))
+                normalFieldBackgrounds.put(field, field.getBackground());
+            int left = field.getPaddingLeft(), top = field.getPaddingTop();
+            int right = field.getPaddingRight(), bottom = field.getPaddingBottom();
+            if (enabled) {
+                android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+                background.setColor(Color.rgb(255, 249, 196));
+                background.setCornerRadius(dp(4));
+                background.setStroke(dp(1), Color.rgb(174, 185, 202));
+                field.setBackground(background);
+            } else {
+                field.setBackground(normalFieldBackgrounds.get(field));
+            }
+            field.setPadding(left, top, right, bottom);
+        }
         setBusy(false);
     }
 
