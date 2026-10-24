@@ -1,4 +1,4 @@
 ./upload-adb.sh --installdir chaosbox_haushalt \
-  --desktop-install /home/roland/CBHaushalt \
+  --installation cbhaushalt-88f4e577f996ad95 \
   --remote-profile haushalt \
-  --ssh-profile Chaosbox
+  --ssh-profile haushalt
