@@ -371,6 +371,17 @@ bash ./sign.sh
 ./upload-adb-release.sh
 ```
 
+Build and install a separate Release app with its own name and icon color:
+
+```bash
+bash ./sign.sh --installdir work
+./upload-adb-release.sh --installdir work SERIAL
+```
+
+This produces `KBox-work.apk`, displayed as `ChaosBox (work)`. Without
+`--installdir`, the Release APK is `KBox-release.apk`. Use the same installation
+name for subsequent updates. The device serial is optional.
+
 Install a separate Debug app alongside the default app:
 
 ```bash

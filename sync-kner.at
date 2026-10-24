@@ -1,0 +1,2 @@
+#!/bin/bash
+rsync --log-file=/tmp/rsync.log --delete -avP  /home/roland/Dokumente/ChatGPT/chaosbox-android/KBox*.apk u114229695@access983197478.webspace-data.io:/kunden/homepages/13/d983197478/htdocs/l1/storage/apk

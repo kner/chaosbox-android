@@ -2,16 +2,28 @@
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
+usage() {
+    echo "Verwendung: $0 [--installdir NAME] [GERAETE-SERIENNUMMER]"
+    echo "Installiert KBox-NAME.apk bzw. KBox-release.apk. Vorher bash ./sign.sh mit demselben --installdir ausführen."
+}
+installation=""
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-    echo "Verwendung: $0 [GERAETE-SERIENNUMMER]"
-    echo "Installiert SSHCopy-release.apk. Vorher bash ./sign.sh ausführen."
+    usage
     exit 0
 fi
-if (( $# > 1 )); then
-    echo "Verwendung: $0 [GERAETE-SERIENNUMMER]" >&2
+if [[ "${1:-}" == "--installdir" ]]; then
+    if [[ $# -lt 2 || ! "$2" =~ ^[a-z][a-z0-9_]{0,39}$ ]]; then
+        usage >&2
+        exit 1
+    fi
+    installation="$2"
+    shift 2
+fi
+if (( $# > 1 )) || [[ "${1:-}" == -* ]]; then
+    usage >&2
     exit 1
 fi
-apk="$PWD/SSHCopy-release.apk"
+apk="$PWD/KBox-${installation:-release}.apk"
 [[ -f "$apk" ]] || { echo "Fehler: APK fehlt. Zuerst bash ./sign.sh ausführen." >&2; exit 1; }
 if command -v adb >/dev/null 2>&1; then
     adb_bin="$(command -v adb)"
