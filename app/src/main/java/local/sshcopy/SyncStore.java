@@ -232,7 +232,7 @@ final class SyncStore {
         }result.sort(Comparator.comparing(File::getPath));return result;
     }
     static List<JSONObject> records(File file) throws Exception {
-        String raw=LocalData.read(file);if(raw.trim().equals("[]"))return new ArrayList<>();return BoxRecords.parseRecords(raw);
+        String raw=LocalData.read(file);if(raw.trim().matches("\\[\\s*\\]"))return new ArrayList<>();return BoxRecords.parseRecords(raw);
     }
     void capture() throws Exception {
         captureOperations=operations();
@@ -382,6 +382,8 @@ final class SyncStore {
             }
         }
         Set<String> paths=new TreeSet<>();for(JSONObject op:operations.values())if(op.getString("kind").equals("record"))paths.add(op.getString("path"));
+        Set<String> protectedPaths=new HashSet<>();for(JSONObject op:operations.values())if(op.getString("kind").equals("record")&&conflicts.containsKey(op.getString("id")))protectedPaths.add(op.getString("path"));
+        for(File source:sources(data,false)){Object value=new JSONTokener(LocalData.read(source)).nextValue();if(value instanceof JSONArray&&((JSONArray)value).length()==0)paths.add(data.toPath().relativize(source.toPath()).toString().replace(File.separatorChar,'/'));}
         for(String relative:paths) {
             File file=safePath("record",relative);List<JSONObject> existing=file.exists()?records(file):new ArrayList<>(),keep=new ArrayList<>();
             for(int i=0;i<existing.size();i++) {JSONObject r=existing.get(i);String ident=r.optString("id",legacyId("record",relative,i));if(!heads.containsKey(ident)||conflicts.containsKey(ident))keep.add(r);}
@@ -390,6 +392,7 @@ final class SyncStore {
                 if(op.getString("kind").equals("record")&&op.getString("path").equals(relative)&&op.getString("action").equals("put"))keep.add(op.getJSONObject("record"));
             }
             String before=canonical(new JSONArray(existing)),after=canonical(new JSONArray(keep));
+            if(keep.isEmpty()){if(file.exists()&&!protectedPaths.contains(relative))trash(file);continue;}
             if(!before.equals(after)) {if(file.exists())trash(file);atomic(file,(after+"\n").getBytes(StandardCharsets.UTF_8));}
         }
         checksums();

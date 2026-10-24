@@ -89,4 +89,17 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-wire-') as temp:
         exchange(source,target);target.apply();target.apply()
         payloads=sorted(file.read_text() for file in target.images.rglob('*.jpg'))
         assert payloads==['one','two'],payloads
+    # Removing the last record removes the file on both clients and preserves history.
+    prior=next(op for op in desk.operations().values() if op['kind']=='record' and op['path']=='box.json' and op['action']=='put')
+    java('delete',android,'box.json',0)
+    assert not (android/'TXT/box.json').exists()
+    exchange(desk,droid);desk.apply();java('apply',android)
+    assert not (desktop/'TXT/box.json').exists()
+    java('capture',android);desk.capture();exchange(desk,droid);desk.apply();java('apply',android)
+    assert not (android/'TXT/box.json').exists()
+    java('restore',android,prior['id'],prior['revision']);exchange(desk,droid);desk.apply()
+    assert (desktop/'TXT/box.json').exists()
+    empty=android/'TXT/empty.json';empty.write_text(' [ ] ')
+    java('apply',android);assert not empty.exists()
+    assert list((droid.root/'trash').rglob('empty.json'))
     print('PASS: identical migration; Android ↔ Desktop merge, Unicode, record deletion, JPEG/MP4 edits, unchanged video streams, media moves, filename collision repair propagated to Desktop, offline conflict, resolution, restoration, idempotence and read-only Web projection')
