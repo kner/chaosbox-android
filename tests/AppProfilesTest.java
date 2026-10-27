@@ -69,8 +69,8 @@ public final class AppProfilesTest {
         String completed = AppProfiles.withDefaults(text);
         check(!completed.contains("Daten="), "Legacy/custom data paths removed");
         check(!completed.contains("JPG="), "Legacy/custom image paths removed");
-        check(completed.contains("Kategorie=Fotos, Gemälde, Fotos"), "Existing profile category retained");
-        check(completed.contains("[App.Archiv]"), "Other profile retained");
+        check(completed.contains("Categories=Fotos, Gemälde"), "Existing profile category retained");
+        check(completed.contains("[Box]\nTitle=Archiv"), "Other profile retained");
         check(AppProfiles.withDefaults(completed).equals(completed), "Existing profiles extended once");
         String converted = AppProfiles.withDefaults("[Kategorie]\nAudio\n[Pfade]\nBilder=Photos\nDaten=Records\n");
         check(!converted.contains("[Kategorie]"), "Remove global category section");

@@ -4,7 +4,7 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
 usage() {
     echo "Verwendung: $0 [--installdir NAME] [GERAETE-SERIENNUMMER]"
-    echo "Installiert KBox-NAME.apk bzw. KBox-release.apk. Vorher bash ./sign.sh mit demselben --installdir ausführen."
+    echo "Installiert released/KBox-NAME-VERSION.apk bzw. released/KBox-release-VERSION.apk. Vorher bash ./sign.sh mit demselben --installdir ausführen."
 }
 installation=""
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -23,7 +23,8 @@ if (( $# > 1 )) || [[ "${1:-}" == -* ]]; then
     usage >&2
     exit 1
 fi
-apk="$PWD/KBox-${installation:-release}.apk"
+version="$(tr -d '[:space:]' < VERSION)"
+apk="$PWD/released/KBox-${installation:-release}-${version//./}.apk"
 [[ -f "$apk" ]] || { echo "Fehler: APK fehlt. Zuerst bash ./sign.sh ausführen." >&2; exit 1; }
 if command -v adb >/dev/null 2>&1; then
     adb_bin="$(command -v adb)"

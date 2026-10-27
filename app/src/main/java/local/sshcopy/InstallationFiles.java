@@ -6,7 +6,7 @@ import java.nio.file.Files;
 /** One installation owns one directory, with no shared-folder or private-cache fallback. */
 final class InstallationFiles {
     static File root(File storage,String name) throws IOException {
-        if(!name.equals("ChaosBox-default")&&!name.matches("[A-Za-z][A-Za-z0-9_]{0,39}"))throw new IOException("Invalid installation directory");
+        if(!name.equals("ChaosBox-default")&&!name.matches("(?:KBox-)?[A-Za-z][A-Za-z0-9_]{0,39}"))throw new IOException("Invalid installation directory");
         File base=storage.getCanonicalFile(),root=new File(base,name);
         if(Files.isSymbolicLink(root.toPath())||!root.getCanonicalFile().getParentFile().equals(base))
             throw new IOException("Installation directory must not be a link or escape storage");

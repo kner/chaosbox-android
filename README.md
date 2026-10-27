@@ -1,7 +1,7 @@
 # Reset-safe installations
 
 Every Android app copy owns `/storage/emulated/0/<name>/`, where `<name>` is the
-`--installdir` name (default `ChaosBox-default`). Its complete layout is:
+`KBox-` followed by the installation name (default `ChaosBox-default`). Its complete layout is:
 
 ```text
 <name>/
@@ -49,7 +49,7 @@ profile mapping and deployment. The common server root is `chaosbox-data`.
 ## English interface and form actions
 
 All application labels, dialogs, hints, error messages and source comments are in
-English. Existing standard field labels (`Anzahl`, `Kategorie`, `Kommentar`) are
+English. Existing standard field labels (`Anzahl`, `Categories`, `Kommentar`) are
 displayed as `Quantity`, `Category`, `Comment`, including in existing setups.
 Custom profile labels, categories, snippets and record contents remain user data;
 existing configuration and JSON keys remain compatible.
@@ -76,7 +76,7 @@ Double-tap to zoom to 2.5× around the tapped point, or to reset an enlarged ima
 Tap **Close** or use Android Back to return to the unchanged editor form.
 
 When saving an image or JSON record, new **Category** values are appended to
-`Kategorie=` in the current profile's section of `setup.ini` and immediately
+`Categories=` in the current profile's section of `setup.ini` and immediately
 appear in the dropdown. Empty entries are ignored; existing entries are compared
 without regard to case. Commas separate multiple categories, as in the setup.
 Other profiles retain their own lists.
@@ -129,12 +129,12 @@ Configure profile labels in `<installdir>/setup.ini` (folders are fixed):
 
 ```ini
 [App]
-Standard=Chaosbox
+ImageWidth=3000
 
-[App.Chaosbox]
-Titel=Chaosbox
-Felder=Box,Anzahl,Device,Alias,Kategorie,Kommentar,Package
-Kategorie=Heizung, Wasser, Elektro, Maurer
+[Box]
+Title=Chaosbox
+Fields=Box,Quantity,Device,Alias,Category,Comment,Package
+Categories=Heizung, Wasser, Elektro, Maurer
 ```
 
 Each profile uses `<installdir>/<profile>/JPG` and `<installdir>/<profile>/TXT`.
@@ -145,8 +145,8 @@ For example, `Elektronik > Stromversorgung` becomes `elektronik`.
 For multiple categories, the first is currently used. A box containing multiple
 records is preserved in full and uses the first nonempty category.
 
-`[ImageSize]` with `LIMIT=3000` sets the maximum length of the longer image edge
-in pixels. If the section is missing, the default is 3000. Smaller JPGs retain
+`ImageWidth=3000` in `[App]` sets the maximum displayed image width in pixels,
+after EXIF rotation. Each `[Box]` can override it. The default is 3000. Smaller JPGs retain
 their image data; saving only updates the metadata. The previous file size
 limit no longer applies. PNG files are saved as JPGs with the same pixel limit;
 smaller images are not enlarged. Transparency is flattened against a white
@@ -203,7 +203,7 @@ project defaults to the sibling `chaosbox-desktop` directory (`--desktop` overri
 - Configuration: `/storage/emulated/0/<installdir>/setup.ini`
 - JSON records: `/storage/emulated/0/<installdir>/Chaosbox/TXT`
 
-The category list is loaded from `Kategorie=` in the selected `[App.Name]`
+The category list is loaded from `Categories=` in the selected `[App.Name]`
 section. Switching app profiles displays that profile's own categories. If the
 file is missing, the bundled template is created after storage access is granted.
 An existing configuration file is updated atomically when migration is needed.
@@ -374,13 +374,15 @@ bash ./sign.sh
 Build and install a separate Release app with its own name and icon color:
 
 ```bash
-bash ./sign.sh --installdir work
+./sign.sh work
 ./upload-adb-release.sh --installdir work SERIAL
 ```
 
-This produces `KBox-work.apk`, displayed as `ChaosBox (work)`. Without
-`--installdir`, the Release APK is `KBox-release.apk`. Use the same installation
-name for subsequent updates. The device serial is optional.
+This produces `released/KBox-work-310.apk`, displayed as `Kbox-work`. The legacy
+`./sign.sh --installdir work` syntax is also supported. Without a name, the
+Release APK is `released/KBox-release-310.apk`. Use the same installation
+name for subsequent updates. The filename includes the product version without dots
+(`3.10` becomes `310`); the Android directory is `/sdcard/KBox-work`. The device serial is optional.
 
 Install a separate Debug app alongside the default app:
 
@@ -388,11 +390,11 @@ Install a separate Debug app alongside the default app:
 ./upload-adb-debug.sh --installdir work SERIAL
 ```
 
-This builds and installs `SSHCopy-debug-work.apk` as `ChaosBox (work)` with
+This builds and installs `SSHCopy-debug-work.apk` as `Kbox-work` with
 package ID `local.sshcopy.installation.work`. Repeat the same name to update
 that app while preserving its private data. Names start with a letter
 and contain only ASCII letters, digits and underscores (maximum 40 characters).
-Names are case-sensitive; `ChaosBox` is a valid name and uses `/sdcard/ChaosBox`.
+Names are case-sensitive; `ChaosBox` is a valid name and uses `/sdcard/KBox-ChaosBox`.
 The device serial is optional. `./build-apk.sh --installdir work` only builds it.
 Named installations get an icon color derived from their name; updates keep the
 same color. Adaptive launcher icons use this color on the Android home screen
@@ -419,13 +421,13 @@ its existing value is preserved. These configuration options require Python 3;
 automatic ID lookup also needs the Desktop Python dependencies.
 
 After a successful APK installation, the script updates
-`/sdcard/<name>/setup.ini`, preserving unrelated settings and making a
+`/sdcard/KBox-<name>/setup.ini`, preserving unrelated settings and making a
 uniquely named `.bak` copy of the previous file on the phone. On first install,
 it starts with the bundled setup template. Configuration failures produce a
 nonzero exit status even if APK installation already succeeded. The app is not
 started and synchronization is not triggered.
 
-Each named app owns `/sdcard/<name>/setup.ini`; it never edits another app copy's
+Each named app owns `/sdcard/KBox-<name>/setup.ini`; it never edits another app copy's
 setup. Without `--installdir`, the directory name is `ChaosBox-default`. By default the
 configuration options update `[SSH]`; add `--ssh-profile NAME` for `[SSH.NAME]`.
 Legacy shared setup files, private setup caches and external profile data folders
@@ -478,23 +480,23 @@ search fields are still combined with AND.
 
 ### App profiles and field labels
 
-The installation-owned `<installdir>/setup.ini` file supports any number of `[App.Name]`
-sections. `[App]` can specify the initial profile using `Standard=Chaosbox`;
-otherwise, the first App subsection is used.
+The installation-owned `<installdir>/setup.ini` uses the same format as Desktop:
+`[App]` supplies defaults, and each repeated `[Box]` section declares one profile
+using `Title`. The first Box is the initial profile.
 
 ```ini
 [App]
-Standard=Chaosbox
+ImageWidth=3000
 
-[App.Chaosbox]
-Titel=Chaosbox
-Felder=Box,Anzahl,Device,Alias,Kategorie,Kommentar,Package
-Kategorie=Heizung, Wasser, Elektro, Maurer
+[Box]
+Title=Chaosbox
+Fields=Box,Quantity,Device,Alias,Category,Comment,Package
+Categories=Heizung, Wasser, Elektro, Maurer
 
-[App.Bilderbox]
-Titel=Bilderbox
-Felder=Box,,,Tags,Kategorie,Kommentar
-Kategorie=Fotos, Gemälde, Dokumente
+[Box]
+Title=Bilderbox
+Fields=Box,,,Tags,Category,Comment
+Categories=Fotos, Gemälde, Dokumente
 ```
 
 Tapping the title opens the profile picker. The selection persists across app
@@ -506,20 +508,20 @@ Each profile has fixed JPG and TXT folders inside the installation. Custom path
 keys are ignored and removed when setup defaults are updated. There is no fallback
 to earlier daten/boxes folders.
 
-`Felder` has seven fixed positions: Box, Quantity, Device, Alias, Category,
+`Fields` has seven fixed positions: Box, Quantity, Device, Alias, Category,
 Comment, Package. Empty positions and omitted trailing positions hide both
 the label and input. In the example, Alias is renamed Tags; Quantity, Device,
-and Package are hidden. If the entire `Felder` line is missing, all seven default
-fields are visible. JSON keys remain unchanged; hidden values in an opened
+and Package are hidden. If a Box omits `Fields`, it inherits `[App] Fields`; without either setting,
+all seven default fields are visible. JSON keys remain unchanged; hidden values in an opened
 record are preserved.
 
 An old `[Pfade]` section is removed when setup is normalized; it never selects an
 external source. Labels/categories can still be converted without importing data.
 
-The previous global `[Kategorie]` section is removed when opening an older
+The previous global `[Categories]` section is removed when opening an older
 `setup.ini`. Its entries are copied into every profile without its own
-`Kategorie=` line. Existing profile-specific categories are preserved.
-An empty `Kategorie=` line produces only the “Uncategorized” placeholder.
+`Categories=` line. Existing profile-specific categories are preserved.
+An empty `Categories=` line produces only the “Uncategorized” placeholder.
 
 If the `Box` field is empty when “Open JSON” is tapped, the app opens the Android
 file picker, as it does for image selection, starting in the active profile's
@@ -621,3 +623,45 @@ which must be resolved explicitly. Do not delete journal operations or blobs.
 
 The script deliberately requires explicit paths: missing files can also indicate
 an incomplete upload, so absence alone is not treated as a deletion request.
+
+
+## Shared setup format (Desktop and Android)
+
+Both applications use `[App]` for inherited defaults and repeated `[Box]`
+sections with `Title` for collection folder names. The first Box is selected by
+default; a remembered Android selection still takes precedence. `ImageWidth`
+(1–20000 pixels, default 3000) belongs in `[App]` and can be overridden per Box.
+`Fields` and `Categories` use the same inheritance and field positions as Desktop.
+`[TextSnippets]`, `[SSH]` and `[SSH.<Title>]` keep their existing names.
+
+```ini
+[App]
+ImageWidth=3000
+Fields=Box,Quantity,Device,Alias,Category,Comment,Package
+
+[Box]
+Title=Inventory
+ImageWidth=2048
+
+[Box]
+Title=Pictures
+Fields=Box,,,Tags,Category,Comment
+Categories=Family, Travel
+```
+
+Android still reads legacy `[App.Name]`, `Standard` and `[ImageSize] LIMIT`.
+Opening/saving the setup migrates these to the shared format. Folder IDs and SSH
+settings are retained; the previous default is moved to the first Box. A custom
+legacy display title differing from the folder ID becomes the folder ID, to keep
+existing files at the same paths. Desktop-only `Language`, `editor` and `[Poster]`
+settings can remain as comments in an Android setup. The combined build exports
+the shared format directly and comments out those unsupported settings.
+
+Pure Java shared-format regression test:
+
+```bash
+javac -d /tmp/kbox-config-tests app/src/main/java/local/sshcopy/{AppProfiles,TextSnippets}.java tests/SharedSetupTest.java
+java -cp /tmp/kbox-config-tests local.sshcopy.SharedSetupTest
+```
+
+Setup keys are English: `Title`, `Fields`, `Categories`. Older `Titel`, `Felder`, and `Kategorie` keys remain readable and are converted when setup is saved. User-defined names and snippet text are unchanged.

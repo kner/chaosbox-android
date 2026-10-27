@@ -8,7 +8,8 @@ public final class InstallationResetTest {
     public static void main(String[] args) throws Exception {
         Path storage=Files.createTempDirectory("installation-reset-");
         try {
-            File first=InstallationFiles.root(storage.toFile(),"cbhaushalt");
+            File first=InstallationFiles.root(storage.toFile(),"KBox-Bilder");
+            require(first.getName().equals("KBox-Bilder"),"Named installation directory changed");
             require(!InstallationFiles.root(storage.toFile(),"ChaosBox-default").getName().equalsIgnoreCase(InstallationFiles.root(storage.toFile(),"chaosbox").getName()),"Default and named roots alias on case-insensitive storage");
             File other=InstallationFiles.root(storage.toFile(),"work");
             Files.createDirectories(other.toPath());Files.writeString(new File(other,"setup.ini").toPath(),"[SSH]\nInstallation=old-other\n");

@@ -15,3 +15,7 @@ __pycache__/
 
 # Named Android debug installations
 /SSHCopy-debug-*.apk
+
+/released/
+
+/app/src/main/assets/android_copy

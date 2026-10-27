@@ -5,14 +5,22 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 installation=""
 gradle_args=()
 if (( $# )); then
-  if [[ $# != 2 || "$1" != "--installdir" || ! "$2" =~ ^[A-Za-z][A-Za-z0-9_]{0,39}$ ]]; then
-    echo "Verwendung: $0 [--installdir NAME] (NAME: A-Z/a-z, dann A-Z/a-z/0-9/_, max. 40 Zeichen)" >&2
+  if [[ $# == 1 ]]; then
+    installation="$1"
+  elif [[ $# == 2 && "$1" == "--installdir" ]]; then
+    installation="$2"
+  else
+    echo "Verwendung: $0 [NAME | --installdir NAME]" >&2
     exit 1
   fi
-  installation="$2"
+  if [[ ! "$installation" =~ ^[A-Za-z][A-Za-z0-9_]{0,39}$ ]]; then
+    echo "Ungültiger Name: A-Z/a-z, dann A-Z/a-z/0-9/_, max. 40 Zeichen" >&2
+    exit 1
+  fi
   gradle_args+=("-PinstallationName=$installation")
 fi
-apk="KBox-${installation:-release}.apk"
+version="$(tr -d '[:space:]' < VERSION)"
+apk="released/KBox-${installation:-release}-${version//./}.apk"
 
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 export PATH="$JAVA_HOME/bin:$PATH"
@@ -44,6 +52,7 @@ build_tools="$ANDROID_HOME/build-tools/35.0.0"
   app/build/outputs/apk/release/app-release-aligned.apk
 
 # Mit dem neuen Schlüssel signieren
+mkdir -p -- released
 "$build_tools/apksigner" sign \
   --ks signing-keys/sshcopy-release.jks \
   --ks-key-alias sshcopy \

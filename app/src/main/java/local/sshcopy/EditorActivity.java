@@ -1617,12 +1617,12 @@ public class EditorActivity extends Activity {
                         savedBytes = new File(saved.getPath()).length();
                     } else if (existing != null) {
                         byte[] result = ImageProcessor.process(new java.io.FileInputStream(existing),
-                                mediaComment, selection.config.imageLimit);
+                                mediaComment, selection.profile.imageWidth);
                         saved = overwriteJpg(existing, result);
                         savedBytes = result.length;
                     } else {
                         byte[] result = ImageProcessor.process(getContentResolver().openInputStream(source),
-                                mediaComment, selection.config.imageLimit);
+                                mediaComment, selection.profile.imageWidth);
                         saved = writeOutput(result, outputName(queryName(source)), selectedCategory);
                         savedBytes = result.length;
                     }
@@ -1853,7 +1853,7 @@ public class EditorActivity extends Activity {
     }
 
     static final class ImageProcessor {
-        static byte[] process(InputStream input, String comment, int maxSide) throws IOException {
+        static byte[] process(InputStream input, String comment, int imageWidth) throws IOException {
             if (input == null) throw new IOException("Could not open image");
             byte[] source;
             try (InputStream in = input; ByteArrayOutputStream all = new ByteArrayOutputStream()) {
@@ -1868,24 +1868,25 @@ public class EditorActivity extends Activity {
             boolean jpegSource = "image/jpeg".equals(bounds.outMimeType);
             if (!jpegSource && !"image/png".equals(bounds.outMimeType))
                 throw new IOException("Select a JPG or PNG file");
+            int orientation = readOrientation(source);
+            int displayWidth = orientation >= 5 && orientation <= 8 ? bounds.outHeight : bounds.outWidth;
             byte[] exif = new byte[0];
-            if (jpegSource && Math.max(bounds.outWidth, bounds.outHeight) <= maxSide)
+            if (jpegSource && displayWidth <= imageWidth)
                 return XmpRecords.write(JpegComments.update(source, null, new byte[0]), comment);
             if (jpegSource) exif = JpegComments.resizedExifSegment(source, null, new byte[0]);
 
             int sample = 1;
-            int longest = Math.max(bounds.outWidth, bounds.outHeight);
-            while (longest / (sample * 2L) >= maxSide) sample *= 2;
+            while (displayWidth / (sample * 2L) >= imageWidth) sample *= 2;
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inSampleSize = sample;
             options.inPreferredConfig = jpegSource ? Bitmap.Config.RGB_565 : Bitmap.Config.ARGB_8888;
             Bitmap bitmap = BitmapFactory.decodeByteArray(source, 0, source.length, options);
             if (bitmap == null) throw new IOException("Could not decode image");
-            bitmap = orient(bitmap, readOrientation(source));
-            int decodedLongest = Math.max(bitmap.getWidth(), bitmap.getHeight());
+            bitmap = orient(bitmap, orientation);
+            int decodedWidth = bitmap.getWidth();
             Bitmap output = bitmap;
-            if (decodedLongest > maxSide) {
-                double factor = (double) maxSide / decodedLongest;
+            if (decodedWidth > imageWidth) {
+                double factor = (double) imageWidth / decodedWidth;
                 int width = Math.max(1, (int) Math.round(bitmap.getWidth() * factor));
                 int height = Math.max(1, (int) Math.round(bitmap.getHeight() * factor));
                 output = Bitmap.createScaledBitmap(bitmap, width, height, true);
