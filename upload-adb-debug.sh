@@ -24,8 +24,8 @@ while (( $# )); do
             fi
             installation="$2"
             shift 2
-            if [[ ! "$installation" =~ ^[a-z][a-z0-9_]{0,39}$ ]]; then
-                echo "Fehler: NAME muss mit a-z beginnen und darf nur a-z, 0-9 und _ enthalten (max. 40 Zeichen)." >&2
+            if [[ ! "$installation" =~ ^[A-Za-z][A-Za-z0-9_]{0,39}$ ]]; then
+                echo "Fehler: NAME muss mit A-Z oder a-z beginnen und darf nur A-Z, a-z, 0-9 und _ enthalten (max. 40 Zeichen)." >&2
                 exit 1
             fi
             ;;

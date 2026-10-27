@@ -5,8 +5,8 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 installation=""
 gradle_args=()
 if (( $# )); then
-  if [[ $# != 2 || "$1" != "--installdir" || ! "$2" =~ ^[a-z][a-z0-9_]{0,39}$ ]]; then
-    echo "Verwendung: $0 [--installdir NAME] (NAME: a-z, dann a-z/0-9/_, max. 40 Zeichen)" >&2
+  if [[ $# != 2 || "$1" != "--installdir" || ! "$2" =~ ^[A-Za-z][A-Za-z0-9_]{0,39}$ ]]; then
+    echo "Verwendung: $0 [--installdir NAME] (NAME: A-Z/a-z, dann A-Z/a-z/0-9/_, max. 40 Zeichen)" >&2
     exit 1
   fi
   installation="$2"

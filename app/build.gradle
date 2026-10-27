@@ -1,6 +1,6 @@
 plugins { id 'com.android.application' }
 def installationName = providers.gradleProperty('installationName').getOrElse('')
-if (installationName && !(installationName ==~ /[a-z][a-z0-9_]{0,39}/)) {
+if (installationName && !(installationName ==~ /[A-Za-z][A-Za-z0-9_]{0,39}/)) {
     throw new GradleException('Invalid installationName')
 }
 // Derive a repeatable hue from the package suffix; updates retain their color.
@@ -27,7 +27,7 @@ android {
     }
     compileSdk 35
     buildFeatures { buildConfig true }
-    defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 32; versionName rootProject.file('VERSION').text.trim() }
+    defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 33; versionName rootProject.file('VERSION').text.trim() }
     defaultConfig {
         if (installationName) applicationIdSuffix ".installation.${installationName}"
         resValue 'string', 'installation_directory', installationName ?: 'ChaosBox-default'

@@ -12,7 +12,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
     exit 0
 fi
 if [[ "${1:-}" == "--installdir" ]]; then
-    if [[ $# -lt 2 || ! "$2" =~ ^[a-z][a-z0-9_]{0,39}$ ]]; then
+    if [[ $# -lt 2 || ! "$2" =~ ^[A-Za-z][A-Za-z0-9_]{0,39}$ ]]; then
         usage >&2
         exit 1
     fi

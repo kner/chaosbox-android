@@ -390,8 +390,9 @@ Install a separate Debug app alongside the default app:
 
 This builds and installs `SSHCopy-debug-work.apk` as `ChaosBox (work)` with
 package ID `local.sshcopy.installation.work`. Repeat the same name to update
-that app while preserving its private data. Names start with a lowercase letter
-and contain only lowercase letters, digits and underscores (maximum 40 characters).
+that app while preserving its private data. Names start with a letter
+and contain only ASCII letters, digits and underscores (maximum 40 characters).
+Names are case-sensitive; `ChaosBox` is a valid name and uses `/sdcard/ChaosBox`.
 The device serial is optional. `./build-apk.sh --installdir work` only builds it.
 Named installations get an icon color derived from their name; updates keep the
 same color. Adaptive launcher icons use this color on the Android home screen
