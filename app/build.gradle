@@ -1,6 +1,6 @@
 plugins { id 'com.android.application' }
 def installationName = providers.gradleProperty('installationName').getOrElse('')
-if (installationName && !(installationName ==~ /[A-Za-z][A-Za-z0-9_]{0,39}/)) {
+if (installationName && !(installationName ==~ /[A-Za-z][A-Za-z0-9_-]{0,39}/)) {
     throw new GradleException('Invalid installationName')
 }
 // Derive a repeatable hue from the package suffix; updates retain their color.
@@ -36,9 +36,12 @@ android {
     }
     compileSdk 35
     buildFeatures { buildConfig true }
-    defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 45; versionName rootProject.file('VERSION').text.trim() }
+    defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 49; versionName rootProject.file('VERSION').text.trim() }
     defaultConfig {
-        if (installationName) applicationIdSuffix ".installation.${installationName}"
+        // Keep existing IDs stable; encode hyphenated names in a separate namespace.
+        if (installationName) applicationIdSuffix installationName.contains('-')
+            ? ".hyphenated.n${installationName.getBytes('UTF-8').encodeHex()}"
+            : ".installation.${installationName}"
         resValue 'string', 'installation_directory', installationName ? "KBox-${installationName}" : 'ChaosBox-default'
         resValue 'color', 'installation_icon_background', installationName ? iconColor(0.52f) : '#173F5F'
         resValue 'color', 'installation_icon_accent', installationName ? iconColor(0.85f) : '#17A398'

@@ -13,8 +13,8 @@ if (( $# )); then
     echo "Verwendung: $0 [NAME | --installdir NAME]" >&2
     exit 1
   fi
-  if [[ ! "$installation" =~ ^[A-Za-z][A-Za-z0-9_]{0,39}$ ]]; then
-    echo "Ungültiger Name: A-Z/a-z, dann A-Z/a-z/0-9/_, max. 40 Zeichen" >&2
+  if [[ ! "$installation" =~ ^[A-Za-z][A-Za-z0-9_-]{0,39}$ ]]; then
+    echo "Ungültiger Name: A-Z/a-z, dann A-Z/a-z/0-9/_/-, max. 40 Zeichen" >&2
     exit 1
   fi
   gradle_args+=("-PinstallationName=$installation")
