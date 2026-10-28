@@ -458,6 +458,26 @@ public class EditorActivity extends Activity {
         root.addView(preview, previewParams);
         ScrollView scroll = new ScrollView(this);
         scroll.addView(root);
+        if (Build.VERSION.SDK_INT >= 30) {
+            // Android 15 enforces edge-to-edge: resize alone does not keep the
+            // focused editor above the IME. Give the scroll viewport its insets.
+            getWindow().setDecorFitsSystemWindows(false);
+            scroll.setOnApplyWindowInsetsListener((view, insets) -> {
+                android.graphics.Insets bars = insets.getInsets(android.view.WindowInsets.Type.systemBars());
+                android.graphics.Insets ime = insets.getInsets(android.view.WindowInsets.Type.ime());
+                view.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+                if (insets.isVisible(android.view.WindowInsets.Type.ime())) {
+                    view.post(() -> {
+                        View focused = scroll.findFocus();
+                        if (focused instanceof EditText) {
+                            EditText editor = (EditText) focused;
+                            editor.bringPointIntoView(Math.max(0, editor.getSelectionEnd()));
+                        }
+                    });
+                }
+                return android.view.WindowInsets.CONSUMED;
+            });
+        }
         return scroll;
     }
 
