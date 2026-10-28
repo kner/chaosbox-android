@@ -45,15 +45,6 @@ public final class TextSnippetsTest {
         } catch (java.io.IOException expected) {
             check(expected.getMessage().contains("broken"), "Name malformed snippet in error");
         }
-        String bundled = java.nio.file.Files.readString(java.nio.file.Path.of(
-                "app/src/main/assets/initial/Setup/setup.ini"));
-        Map<String, String> bundledSnippets = TextSnippets.parse(bundled);
-        check(bundledSnippets.equals(AppProfiles.parse(AppProfiles.withDefaults(bundled)).textSnippets),
-                "Bundled snippets survive setup migration");
-        check(bundledSnippets.get("chatgpt").contains("schreibe  \"?\"\n- Beschreibe"),
-                "Paired quotes at line end do not end bundled chatgpt snippet");
-        check(bundledSnippets.get("gemini").endsWith("Unbekannte Teile mit ??? kennzeichnen."),
-                "Read bundled gemini snippet through its last line");
         StringBuilder many = new StringBuilder("[TextSnippets]\n");
         for (int i = 0; i < 10000; i++) many.append("text").append(i).append("=\"Inhalt ").append(i).append("\"\n");
         check(TextSnippets.parse(many.toString()).size() == 10000, "No fixed entry limit");
@@ -66,6 +57,6 @@ public final class TextSnippetsTest {
                 "Preserve existing user snippets without adding examples");
         check(AppProfiles.parse(AppProfiles.withDefaults("[TextSnippets]\n")).textSnippets.isEmpty(),
                 "Keep intentionally empty section empty");
-        System.out.println("PASS: single/multiline snippets, bundled prompts, 10000 entries, migration, malformed quotes");
+        System.out.println("PASS: single/multiline snippets, 10000 entries, migration, malformed quotes");
     }
 }

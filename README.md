@@ -665,3 +665,14 @@ java -cp /tmp/kbox-config-tests local.sshcopy.SharedSetupTest
 ```
 
 Setup keys are English: `Title`, `Fields`, `Categories`. Older `Titel`, `Felder`, and `Kategorie` keys remain readable and are converted when setup is saved. User-defined names and snippet text are unchanged.
+
+## Explizite Android-Konfiguration
+
+Das Android-Projekt enthält keine setup.ini-Vorlage mehr. Direkte Builds benötigen eine externe Konfiguration:
+
+```bash
+KBOX_SETUP_FILE=/absoluter/pfad/setup.ini ./build-apk.sh
+KBOX_SETUP_FILE=/absoluter/pfad/setup.ini bash ./sign.sh --installdir Bilder
+```
+
+Bei direktem Gradle-Aufruf ist alternativ `-PsetupFile=/absoluter/pfad/setup.ini` möglich. Ohne existierende Konfiguration bricht der Build mit einer Fehlermeldung ab. Die Datei wird als `initial/Setup/setup.ini` in die APK eingebettet. KBox-make-all erzeugt sie aus der Desktop-Installation und übergibt sie automatisch. Vorhandene Android-Einstellungen bleiben bei Updates erhalten.

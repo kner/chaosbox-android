@@ -38,7 +38,7 @@ class SetupTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         for name in ('upload-adb-debug.sh', 'upload-adb.sh', 'configure-adb-sync.py'):
             shutil.copy2(ROOT / name, self.root / name)
-        asset = self.root / 'app/src/main/assets/initial/Setup/setup.ini'
+        asset = self.root / 'external/setup.ini'
         asset.parent.mkdir(parents=True)
         asset.write_text('[App]\nStandard=Chaosbox\n[SSH]\nHost=server\n')
         (self.root / 'SSHCopy-debug.apk').touch()
@@ -70,7 +70,7 @@ else:sys.exit(3)
         self.device.mkdir()
         self.setup = self.device / 'ChaosBox-default/setup.ini'
         self.setup.parent.mkdir(parents=True)
-        self.env = dict(os.environ, PATH=str(self.root)+':'+os.environ['PATH'], FAKE_DEVICE=str(self.device))
+        self.env = dict(os.environ, PATH=str(self.root)+':'+os.environ['PATH'], FAKE_DEVICE=str(self.device), KBOX_SETUP_FILE=str(asset))
 
     def upload(self, *args, success=True):
         result = subprocess.run(['bash', str(self.root / 'upload-adb.sh'), *args], env=self.env, capture_output=True, text=True)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Set an Android SSH sync target without replacing unrelated setup.ini settings."""
 import argparse
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -84,7 +85,10 @@ def configure(args, installation):
             adb('pull', remote, str(local), capture_output=True)
             text = local.read_bytes().decode('utf-8')
         else:
-            text = (ROOT / 'app/src/main/assets/initial/Setup/setup.ini').read_bytes().decode('utf-8')
+            source = os.environ.get('KBOX_SETUP_FILE', '')
+            if not source or not Path(source).is_file():
+                raise ValueError('Android setup.ini fehlt. KBOX_SETUP_FILE auf eine vorhandene setup.ini setzen.')
+            text = Path(source).read_bytes().decode('utf-8')
         updated = update_setup(text, installation, args.remote_profile, args.ssh_profile)
         if exists and text == updated:
             print('Android setup.ini: Synchronisationsziel ist bereits korrekt.')

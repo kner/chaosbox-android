@@ -9,9 +9,18 @@ float iconHue = (((iconDigest[0] & 0xFF) << 8) | (iconDigest[1] & 0xFF)) / 65536
 def iconColor = { float brightness ->
     String.format('#%06X', java.awt.Color.HSBtoRGB(iconHue, 0.75f, brightness) & 0xFFFFFF)
 }
+def setupPath = providers.gradleProperty('setupFile').orElse(providers.environmentVariable('KBOX_SETUP_FILE')).getOrElse('')
+if (!setupPath || !rootProject.file(setupPath).isFile()) {
+    throw new GradleException('setup.ini fehlt. KBOX_SETUP_FILE=/absoluter/pfad/setup.ini setzen oder -PsetupFile=... übergeben. KBox-make-all erzeugt diese Datei automatisch.')
+}
+def setupAssets = tasks.register('prepareSetupAssets', Sync) {
+    from(rootProject.file(setupPath)) { rename { 'setup.ini' }; into 'initial/Setup' }
+    into layout.buildDirectory.dir('generated/setupAssets')
+}
 android {
     // Historical copies are retained; compile only the canonical implementations.
     sourceSets.main.java.exclude '**/* (*in Konflikt stehende Kopie*).java'
+    sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/setupAssets'))
     namespace 'local.sshcopy'
     // Retain the original development certificate so installed copies can update.
     signingConfigs {
@@ -27,7 +36,7 @@ android {
     }
     compileSdk 35
     buildFeatures { buildConfig true }
-    defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 44; versionName rootProject.file('VERSION').text.trim() }
+    defaultConfig { applicationId 'local.sshcopy'; minSdk 26; targetSdk 35; versionCode 45; versionName rootProject.file('VERSION').text.trim() }
     defaultConfig {
         if (installationName) applicationIdSuffix ".installation.${installationName}"
         resValue 'string', 'installation_directory', installationName ? "KBox-${installationName}" : 'ChaosBox-default'
@@ -42,3 +51,5 @@ dependencies {
     implementation 'com.github.mwiede:jsch:2.28.0'
     implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
 }
+
+tasks.named('preBuild').configure { dependsOn(setupAssets) }
