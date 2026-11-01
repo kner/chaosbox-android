@@ -43,3 +43,5 @@ The Java tests named `*Test.java` exercise the production class with the same st
 The Python tests provide end-to-end compatibility checks: `test-sync.py` compares the Android journal with desktop behavior; `test-sftp.py` verifies SFTP and web visibility; `test-upload-adb.py` tests ADB setup editing; `test-mp4.py`, `test-xmp.py`, and `test-server-delete.py` validate metadata and maintenance tools.
 
 Run the documented validation commands from `SYNC-VALIDATION.md`.
+
+User-visible errors retain technical details and add a cause explanation and recovery options. `UploadErrors.java` serves synchronization and editor error displays; error dialogs remain visible until dismissed. Unknown errors receive conservative fallback guidance; completed steps are not assumed to have rolled back.

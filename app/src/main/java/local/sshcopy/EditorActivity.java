@@ -113,7 +113,7 @@ public class EditorActivity extends Activity {
             setContentView(buildUi());
             applyProfileLabels();
         } catch (IOException e) {
-            Toast.makeText(this, "Setup: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            showError("Setup: " + UploadErrors.describe(e));
             finish();
         }
     }
@@ -214,7 +214,7 @@ public class EditorActivity extends Activity {
             if (changed) resetProfileForm();
             else applyProfileLabels();
         } catch (IOException e) {
-            Toast.makeText(this, "Setup: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            showError("Setup: " + UploadErrors.describe(e));
         }
     }
 
@@ -242,11 +242,11 @@ public class EditorActivity extends Activity {
                             }
                             dialog.dismiss();
                         } catch (IOException e) {
-                            Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show();
+                            showError(UploadErrors.describe(e));
                         }
                     }).setNegativeButton("Cancel", null).show();
         } catch (IOException e) {
-            Toast.makeText(this, "Setup: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            showError("Setup: " + UploadErrors.describe(e));
         }
     }
 
@@ -606,7 +606,7 @@ public class EditorActivity extends Activity {
                                 Toast.LENGTH_LONG).show();
                     }).setNegativeButton("Cancel", null).show();
         } catch (IOException e) {
-            Toast.makeText(this, "Setup: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            showError("Setup: " + UploadErrors.describe(e));
         }
     }
 
@@ -646,12 +646,12 @@ public class EditorActivity extends Activity {
                             Toast.makeText(this, "Setup saved", Toast.LENGTH_SHORT).show();
                         } catch (IOException e) {
                             if (out != null) target.failWrite(out);
-                            input.setError("Save failed: " + e.getMessage());
+                            input.setError("Save failed: " + UploadErrors.describe(e));
                         }
                     }));
             dialog.show();
         } catch (IOException e) {
-            Toast.makeText(this, "Setup: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            showError("Setup: " + UploadErrors.describe(e));
         }
     }
 
@@ -691,9 +691,15 @@ public class EditorActivity extends Activity {
                         "Some files remain unchanged in their original location:\n" + String.join("\n", warnings)));
                 runOnUiThread(() -> { refreshCategories(); setBusy(false); });
             } catch (IOException e) {
-                runOnUiThread(() -> { setBusy(false); showIndexError(e.getMessage()); });
+                runOnUiThread(() -> { setBusy(false); showIndexError(UploadErrors.describe(e)); });
             }
         });
+    }
+
+    private void showError(String message) {
+        if (isFinishing() || isDestroyed()) return;
+        new android.app.AlertDialog.Builder(this).setTitle("ChaosBox error")
+                .setMessage(message).setPositiveButton("OK", null).show();
     }
 
     private void showIndexError(String message) {
@@ -880,7 +886,7 @@ public class EditorActivity extends Activity {
                     }
                 });
             } catch (IOException e) {
-                runOnUiThread(() -> { setBusy(false); showIndexError(e.getMessage()); });
+                runOnUiThread(() -> { setBusy(false); showIndexError(UploadErrors.describe(e)); });
             }
         });
     }
@@ -999,7 +1005,7 @@ public class EditorActivity extends Activity {
                 .setOnClickListener(button -> {
                     String name = input.getText().toString().trim();
                     try { BoxRecords.validateName(name); }
-                    catch (IOException e) { input.setError(e.getMessage()); return; }
+                    catch (IOException e) { input.setError(UploadErrors.describe(e)); return; }
                     dialog.dismiss();
                     box.setText(name);
                     action.accept(name);
@@ -1018,7 +1024,7 @@ public class EditorActivity extends Activity {
     private void openJson(String name, File chosen) {
         final String selectedCategory = category.getText().toString();
         try { BoxRecords.validateName(name); box.setError(null); }
-        catch (IOException e) { box.setError(e.getMessage()); box.requestFocus(); return; }
+        catch (IOException e) { box.setError(UploadErrors.describe(e)); box.requestFocus(); return; }
         setBusy(true);
         worker.execute(() -> {
             try {
@@ -1057,7 +1063,7 @@ public class EditorActivity extends Activity {
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     setBusy(false);
-                    Toast.makeText(this, "Open JSON: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                    showError("Open JSON: " + UploadErrors.describe(e));
                 });
             }
         });
@@ -1115,7 +1121,7 @@ public class EditorActivity extends Activity {
         if (busy) return;
         final File file;
         try { file = activeRecord != null ? activeRecord.source : selectedUri == null ? null : existingMedia(selectedUri); }
-        catch (IOException e) { Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show(); return; }
+        catch (IOException e) { showError(UploadErrors.describe(e)); return; }
         int index = activeRecord != null && !activeRecord.image ? activeRecord.recordIndex : -1;
         if (file == null) { Toast.makeText(this, "Select a saved record or media file first.", Toast.LENGTH_LONG).show(); return; }
         new android.app.AlertDialog.Builder(this).setTitle("Delete selected entry?")
@@ -1128,7 +1134,7 @@ public class EditorActivity extends Activity {
                         try (AutoCloseable lock = store.lock()) { store.delete(file, index); }
                         rebuildIndex();
                         runOnUiThread(() -> { setBusy(false); clearForm(); selectedLabel.setText("Deleted locally; synchronize to propagate."); });
-                    } catch (Exception e) { runOnUiThread(() -> { setBusy(false); Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show(); }); }
+                    } catch (Exception e) { runOnUiThread(() -> { setBusy(false); showError(UploadErrors.describe(e)); }); }
                 });
             }).show();
     }
@@ -1145,7 +1151,7 @@ public class EditorActivity extends Activity {
                         SyncStore store=SyncSftp.store(selection.paths);
                         try(AutoCloseable lock=store.lock()){store.deleteBox(file);}
                         rebuildIndex();runOnUiThread(()->{setBusy(false);clearForm();selectedLabel.setText("Box deleted locally; synchronize to propagate.");});
-                    }catch(Exception e){runOnUiThread(()->{setBusy(false);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}
+                    }catch(Exception e){runOnUiThread(()->{setBusy(false);showError(UploadErrors.describe(e));});}
                 });
             }).show();
     }
@@ -1173,11 +1179,11 @@ public class EditorActivity extends Activity {
                                     rebuildIndex();
                                     final int count=renamed;
                                     runOnUiThread(()->{setBusy(false);invalidateSynchronizedSelection();selectedLabel.setText(count+" media object(s) renamed; synchronize to send the repair.");});
-                                }catch(Exception e){runOnUiThread(()->{setBusy(false);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}
+                                }catch(Exception e){runOnUiThread(()->{setBusy(false);showError(UploadErrors.describe(e));});}
                             });
                         }).show();
                 });
-            }catch(Exception e){runOnUiThread(()->{setBusy(false);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}
+            }catch(Exception e){runOnUiThread(()->{setBusy(false);showError(UploadErrors.describe(e));});}
         });
     }
 
@@ -1213,11 +1219,11 @@ public class EditorActivity extends Activity {
                                         try(AutoCloseable lock=store.lock()){if(trash)store.restore(chosen.getString("id"),chosen.getString("revision"));else store.resolve(chosen.getString("id"),chosen.getString("revision"));}
                                         rebuildIndex();
                                         runOnUiThread(()->{setBusy(false);invalidateSynchronizedSelection();selectedLabel.setText("Version selected locally; synchronize to propagate.");});
-                                    }catch(Exception e){runOnUiThread(()->{setBusy(false);Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show();});}
+                                    }catch(Exception e){runOnUiThread(()->{setBusy(false);showError(UploadErrors.describe(e));});}
                                 });
                             }).show()).setNegativeButton("Close",null).show();
                 });
-            } catch(Exception e) {runOnUiThread(()->Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show());}
+            } catch(Exception e) {runOnUiThread(()->showError(UploadErrors.describe(e)));}
         });
     }
 
@@ -1260,7 +1266,7 @@ public class EditorActivity extends Activity {
                 try { upload.copy(); } finally { rebuildIndex(); }
             } catch (Exception e) {
                 failure = "Synchronization failed:\n" + UploadErrors.describe(e)
-                        + "\nLocal files are retained. Tap (c) kner to try again.";
+                        + "\nEarlier synchronization steps may already have completed. Tap (c) kner to try again after resolving the cause.";
             }
             final String error = failure;
             runOnUiThread(() -> {
@@ -1375,7 +1381,7 @@ public class EditorActivity extends Activity {
                     if (isDestroyed()) return;
                     setBusy(false);
                     new android.app.AlertDialog.Builder(this).setTitle("Could not open media")
-                            .setMessage(e.getMessage()).setPositiveButton("OK", null)
+                            .setMessage(UploadErrors.describe(e)).setPositiveButton("OK", null)
                             .setNeutralButton("Other file …", (d, which) -> chooseExternalImage()).show();
                 });
             }
@@ -1451,7 +1457,7 @@ public class EditorActivity extends Activity {
                 if (data.getData() == null) throw new IOException("No file selected.");
                 openJson(selectedJsonFile(data.getData()));
             } catch (IOException e) {
-                Toast.makeText(this, "Open JSON: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                showError("Open JSON: " + UploadErrors.describe(e));
             }
             return;
         }
@@ -1564,7 +1570,7 @@ public class EditorActivity extends Activity {
         final String boxName = box.getText().toString();
         if (selectedUri == null) {
             try { BoxRecords.validateName(boxName); box.setError(null); }
-            catch (IOException e) { box.setError(e.getMessage()); box.requestFocus(); return; }
+            catch (IOException e) { box.setError(UploadErrors.describe(e)); box.requestFocus(); return; }
         }
         final DeviceRecord originalRecord = activeRecord;
         final Uri imageUri = selectedUri;
@@ -1667,11 +1673,11 @@ public class EditorActivity extends Activity {
             } catch (Exception e) {
                 final String message = (images.size() > 1
                         ? "Saved " + completed + " of " + images.size() + " files. Stopped at "
-                                + (completed < images.size() ? images.get(completed) : "completion") + ": " : "Error: ") + e.getMessage();
+                                + (completed < images.size() ? images.get(completed) : "completion") + ": " : "Error: ") + UploadErrors.describe(e);
                 runOnUiThread(() -> {
                     setBusy(false);
                     selectedLabel.setText(message);
-                    Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                    showError(message);
                 });
             }
         });
