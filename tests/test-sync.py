@@ -3,13 +3,13 @@
 import argparse,sys,tempfile,subprocess,json,shutil
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--json-jar',required=True,type=Path);p.add_argument('--desktop',type=Path);a=p.parse_args()
-ROOT=Path(__file__).resolve().parents[1];DESKTOP=a.desktop or ROOT.parent/'chaosbox-desktop';WEB=ROOT.parent/'chaosbox-kner-at'
+ROOT=Path(__file__).resolve().parents[1];DESKTOP=a.desktop or ROOT.parent/'KBox-desktop';WEB=ROOT.parent/'KBox-kner-at'
 sys.path.insert(0,str(DESKTOP))
-import core,chaos_sync
+import core,KBox_sync
 from PIL import Image
 
 def run(*args):return subprocess.check_output(list(map(str,args)),text=True).strip()
-with tempfile.TemporaryDirectory(prefix='chaosbox-wire-') as temp:
+with tempfile.TemporaryDirectory(prefix='KBox-wire-') as temp:
     root=Path(temp);classes=root/'classes';classes.mkdir()
     files=['SyncStore','LocalData','BoxRecords','XmpRecords','JpegComments','Mp4Comments']
     run('javac','-cp',a.json_jar,'-d',classes,*[ROOT/f'app/src/main/java/local/sshcopy/{name}.java' for name in files],ROOT/'tests/SyncStoreTest.java',ROOT/'tests/MediaFilenameConflictTest.java')
@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-wire-') as temp:
         for value in [None,'','null','Grüße 東京']:
             record={key:value}
             actual=json.loads(java('normalize',root,json.dumps(record)))
-            assert actual==chaos_sync.normalized(record),(record,actual)
+            assert actual==KBox_sync.normalized(record),(record,actual)
             assert actual['comment']==('' if value is None else value)
     def store(folder):
         profile=core.Profile('','',folder/'JPG',folder/'TXT',folder/'TXT',folder/'.indices',[],[])
@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-wire-') as temp:
     exchange(desk,droid);desk.apply();java('apply',android)
     java('edit',android,'box.json',0,'Android edit 🎬')
     records=json.loads((desktop/'TXT/box.json').read_text());records[1]['comment']='Desktop edit'
-    chaos_sync.atomic(desktop/'TXT/box.json',chaos_sync.canonical(records));desk.capture()
+    KBox_sync.atomic(desktop/'TXT/box.json',KBox_sync.canonical(records));desk.capture()
     exchange(desk,droid);desk.apply();assert java('apply',android)=='0'
     assert json.loads((desktop/'TXT/box.json').read_text())==json.loads((android/'TXT/box.json').read_text())
     java('delete',android,'box.json',0);exchange(desk,droid);desk.apply();java('apply',android)
@@ -65,9 +65,9 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-wire-') as temp:
     java('resolve',android,ident,deletion['revision']);exchange(desk,droid);assert not desk.apply()
     assert not (desktop/'JPG/photo.jpg').exists()
     # The server needs no writable source files; it projects only the journal.
-    script='require $argv[1];$c=new App\\Services\\ChaosBoxCatalog($argv[2]);echo json_encode($c->rebuild());'
+    script='require $argv[1];$c=new App\\Services\\KBoxCatalog($argv[2]);echo json_encode($c->rebuild());'
     before={f.relative_to(droid.data):f.read_bytes() for f in droid.data.rglob('*') if f.is_file()}
-    entries=json.loads(run('php','-r',script,WEB/'app/Services/ChaosBoxCatalog.php',android))
+    entries=json.loads(run('php','-r',script,WEB/'app/Services/KBoxCatalog.php',android))
     assert len(entries)==3,entries
     assert before=={f.relative_to(droid.data):f.read_bytes() for f in droid.data.rglob('*') if f.is_file()}
     old=next(op for op in desk.operations().values() if op['id']==ident and op['action']=='put')
@@ -77,15 +77,15 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-wire-') as temp:
     desk.capture();exchange(desk,droid);desk.apply();java('apply',android)
     assert (android/'JPG/moved/photo.jpg').is_file() and not (android/'JPG/photo.jpg').exists()
     before=len(desk.operations());desk.capture();java('capture',android);assert len(desk.operations())==before and len(droid.operations())==before
-    entries=json.loads(run('php','-r',script,WEB/'app/Services/ChaosBoxCatalog.php',android));assert len(entries)==4
+    entries=json.loads(run('php','-r',script,WEB/'app/Services/KBoxCatalog.php',android));assert len(entries)==4
     image=next(e for e in entries if e.get('payload'))
-    imagepath=run('php','-r','require $argv[1];$c=new App\\Services\\ChaosBoxCatalog($argv[2]);echo $c->imagePath($argv[3]);',WEB/'app/Services/ChaosBoxCatalog.php',android,image['image'])
+    imagepath=run('php','-r','require $argv[1];$c=new App\\Services\\KBoxCatalog($argv[2]);echo $c->imagePath($argv[3]);',WEB/'app/Services/KBoxCatalog.php',android,image['image'])
     assert Path(imagepath).is_file()
     collision_root=root/'filename-collisions'
     run('java','-cp',f'{classes}:{a.json_jar}','local.sshcopy.MediaFilenameConflictTest',collision_root)
     for case in ('case-false','case-true'):
-        source=chaos_sync.Store(collision_root/case/'JPG',collision_root/case/'TXT')
-        target=chaos_sync.Store(root/('received-'+case)/'JPG',root/('received-'+case)/'TXT')
+        source=KBox_sync.Store(collision_root/case/'JPG',collision_root/case/'TXT')
+        target=KBox_sync.Store(root/('received-'+case)/'JPG',root/('received-'+case)/'TXT')
         exchange(source,target);target.apply();target.apply()
         payloads=sorted(file.read_text() for file in target.images.rglob('*.jpg'))
         assert payloads==['one','two'],payloads

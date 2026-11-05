@@ -22,7 +22,7 @@ final class AppProfiles {
         Profile(String id, Map<String, String> values) throws IOException {
             this.id = id;
             imageWidth = width(values.getOrDefault("imagewidth", "3000"));
-            title = values.getOrDefault("titel", id.equalsIgnoreCase("Chaobox") ? "Chaosbox" : id).trim();
+            title = values.getOrDefault("titel", id.equalsIgnoreCase("Chaobox") ? "KBox" : id).trim();
             if(id.isEmpty()||(id.equals(".")||id.equals(".."))||id.contains("/")||id.contains("\\")||id.matches(".*[\\p{Cntrl}].*"))
                 throw new IOException("Invalid app profile directory: "+id);
             images = id+"/JPG";
@@ -79,7 +79,7 @@ final class AppProfiles {
             Map<String, String> legacy = new LinkedHashMap<>();
             legacy.put("kategorie", oldCategories);
             legacy.put("imagewidth", Integer.toString(imageLimit(sections)));
-            profiles.add(new Profile("Chaosbox", legacy));
+            profiles.add(new Profile("KBox", legacy));
         }
         return new AppProfiles(profiles, defaultId, imageLimit(sections), TextSnippets.parse(text));
     }
@@ -385,7 +385,7 @@ final class AppProfiles {
             if (current.regionMatches(true, 0, "App.", 0, 4) && !hasCategory)
                 result.append("Kategorie=").append(oldCategories).append('\n');
         } else {
-            result.append("\n[App]\nStandard=Chaosbox\n\n[App.Chaosbox]\nTitel=Chaosbox")
+            result.append("\n[App]\nStandard=KBox\n\n[App.KBox]\nTitel=KBox")
                     .append("\nFields=").append(DEFAULT_FIELDS)
                     .append("\nCategories=").append(oldCategories).append('\n');
         }

@@ -68,10 +68,10 @@ Im Android-Projekt nach dem Build:
 Im Web-Projekt:
 
 ```sh
-php tests/ChaosBoxCatalogTest.php
-php tests/ChaosBoxCacheTest.php
-php tests/ChaosBoxXmpTest.php
-php tests/ChaosBoxSyncTest.php
+php tests/KBoxCatalogTest.php
+php tests/KBoxCacheTest.php
+php tests/KBoxXmpTest.php
+php tests/KBoxSyncTest.php
 /usr/bin/python3 tests/test_journal_transfer.py
 ```
 

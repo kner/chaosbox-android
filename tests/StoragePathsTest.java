@@ -13,16 +13,16 @@ public final class StoragePathsTest {
         Path root = Files.createTempDirectory("category-storage-");
         try {
             StoragePaths paths = StoragePaths.parse(root.toFile(),
-                    "[App.Chaosbox]\nJPG=ChaosBox/JPG\nDaten=ChaosBox/boxes\n");
-            check(paths.data.equals(root.resolve("Chaosbox/TXT").toFile()), "Box root");
-            check(paths.canUpload(new File(paths.data, "nested/box.json")), "ChaosBox upload allowed");
+                    "[App.KBox]\nJPG=KBox/JPG\nDaten=KBox/boxes\n");
+            check(paths.data.equals(root.resolve("KBox/TXT").toFile()), "Box root");
+            check(paths.canUpload(new File(paths.data, "nested/box.json")), "KBox upload allowed");
             check(!paths.canUpload(root.resolve("Bilderbox/boxes/box.json").toFile()), "Bilderbox upload excluded");
-            check(!paths.canUpload(root.resolve("ChaosBox-other/box.json").toFile()), "Sibling prefix excluded");
-            check(!paths.canUpload(root.resolve("ChaosBox/../outside.json").toFile()), "Path traversal excluded");
+            check(!paths.canUpload(root.resolve("KBox-other/box.json").toFile()), "Sibling prefix excluded");
+            check(!paths.canUpload(root.resolve("KBox/../outside.json").toFile()), "Path traversal excluded");
             Files.createDirectories(root.resolve("outside"));
-            Files.createDirectories(root.resolve("ChaosBox"));
-            Files.createSymbolicLink(root.resolve("ChaosBox/link"), root.resolve("outside"));
-            check(!paths.canUpload(root.resolve("ChaosBox/link/box.json").toFile()), "Symlink escape excluded");
+            Files.createDirectories(root.resolve("KBox"));
+            Files.createSymbolicLink(root.resolve("KBox/link"), root.resolve("outside"));
+            check(!paths.canUpload(root.resolve("KBox/link/box.json").toFile()), "Symlink escape excluded");
             check(StoragePaths.categoryFolder("Elektronik > Stromversorgung").equals("elektronik"), "Image category");
             Files.createDirectories(paths.images.toPath());
             Files.createDirectories(paths.data.toPath());

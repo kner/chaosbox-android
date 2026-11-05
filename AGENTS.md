@@ -1,4 +1,4 @@
-# Shared ChaosBox product version
+# Shared KBox product version
 
 Android, desktop and web share the product version in their root `VERSION` files.
 The baseline is 1.0. For each subsequent user-requested behavior or UI change,
@@ -12,3 +12,11 @@ Display the version beside the (c) kner.at credit in every app. Android reads
 VERSION at build time; keep its numeric versionCode increasing for updates.
 Desktop and web installers must include VERSION. Product versions do not change
 journal, cache, XMP, or desktop-entry format schema versions.
+
+# Product naming and compatibility
+
+Use `KBox` for new product names, files, code identifiers, environment variables,
+installers and paths. Historical names are permitted only for compatibility:
+existing installation/repository paths, configuration aliases, XMP namespace
+URIs and the shared sync journal path must remain readable. Preserve dataset
+identities, existing setup files, credentials and synchronization history.

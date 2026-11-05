@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish explicit server-side deletions to the ChaosBox v1 journal."""
+"""Publish explicit server-side deletions to the KBox v1 journal."""
 import argparse
 from datetime import datetime, timezone
 import json

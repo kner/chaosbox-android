@@ -1,7 +1,7 @@
 # Reset-safe installations
 
 Every Android app copy owns `/storage/emulated/0/<name>/`, where `<name>` is the
-`KBox-` followed by the installation name (default `ChaosBox-default`). Its complete layout is:
+`KBox-` followed by the installation name (default `KBox-default`). Its complete layout is:
 
 ```text
 <name>/
@@ -10,8 +10,8 @@ Every Android app copy owns `/storage/emulated/0/<name>/`, where `<name>` is the
   .state/credentials/
   .state/selected-profile
   .indices/
-  Chaosbox/JPG/
-  Chaosbox/TXT/.chaosbox-sync/
+  KBox/JPG/
+  KBox/TXT/.chaosbox-sync/
   Bilderbox/JPG/
   Bilderbox/TXT/.chaosbox-sync/
 ```
@@ -26,7 +26,7 @@ new generation ID, even at the same path. Configure Android against that new ID:
 
 ```bash
 ./upload-adb.sh --installdir cbhaushalt \
-  --desktop-install /home/roland/CBHaushalt --remote-profile chaosbox
+  --desktop-install /home/roland/CBHaushalt --remote-profile KBox
 ```
 
 Old folders and old server generations are left untouched and are never used as
@@ -36,15 +36,15 @@ The new path layout is intentionally not an automatic migration of old data.
 
 ---
 
-# ChaosBox — Android and Ubuntu apps
+# KBox — Android and Ubuntu apps
 
 ## Reference and synchronization
 
-The reference desktop application is the sibling `chaosbox-desktop` project.
+The reference desktop application is the sibling `KBox-desktop` project.
 Android and Desktop now share IDs, revisions, XMP and a transport-independent
-change journal. The read-only `chaosbox-kner-at` viewer understands this journal.
+change journal. The read-only `KBox-kner-at` viewer understands this journal.
 See [SYNC-PROTOCOL.md](SYNC-PROTOCOL.md) for configuration, deletion, recovery,
-profile mapping and deployment. The common server root is `chaosbox-data`.
+profile mapping and deployment. The common server root is `KBox-data`.
 
 ## English interface and form actions
 
@@ -62,7 +62,7 @@ The form action row contains three equally sized controls:
   a search has run and resets when the active profile changes.
 - **TXT**: opens the text snippet picker and copies the selected snippet.
 
-The media dialog supports selecting multiple files with checkboxes, then **Open**.
+The media dialog supports selecting multiple files with checKBoxes, then **Open**.
 **Other file …** also supports multiple JPG/PNG/MP4 files. The first selected file supplies
 the preview and initial form values. **Save** writes the same form metadata to
 all selected files. Existing JPGs in the configured image folder are updated in
@@ -132,7 +132,7 @@ Configure profile labels in `<installdir>/setup.ini` (folders are fixed):
 ImageWidth=3000
 
 [Box]
-Title=Chaosbox
+Title=KBox
 Fields=Box,Quantity,Device,Alias,Category,Comment,Package
 Categories=Heizung, Wasser, Elektro, Maurer
 ```
@@ -180,9 +180,9 @@ Images from the configured JPG folder are overwritten atomically using the
 same filename, without a `_cb` suffix. JPGs within the configured pixel LIMIT
 are not recompressed; their image data and other EXIF metadata are preserved.
 Larger JPGs are reduced to the configured longer-edge length. Image records use
-`urn:chaosbox:metadata:1.0/` (`chaosbox:version=1`): box, anzahl, device,
+`urn:chaosbox:metadata:1.0/` (`KBox:version=1`): box, anzahl, device,
 alias, category and package. Comments use `dc:description` with `x-default`;
-creation dates use `xmp:CreateDate`, matching chaosbox-desktop. Unrelated XMP is
+creation dates use `xmp:CreateDate`, matching KBox-desktop. Unrelated XMP is
 retained, including when resizing. Legacy EXIF UserComment records remain
 readable and are replaced by XMP when saved. MP4 records continue to use JSON
 in the standard `©cmt` comment. JSON boxes contain arrays of records with the
@@ -197,11 +197,11 @@ writer, including Unicode, empty fields and unrelated XMP preservation:
 ```
 
 It requires a JDK, ExifTool and the desktop Python dependencies; the reference
-project defaults to the sibling `chaosbox-desktop` directory (`--desktop` overrides it).
+project defaults to the sibling `KBox-desktop` directory (`--desktop` overrides it).
 
-- Images: `/storage/emulated/0/<installdir>/Chaosbox/JPG`
+- Images: `/storage/emulated/0/<installdir>/KBox/JPG`
 - Configuration: `/storage/emulated/0/<installdir>/setup.ini`
-- JSON records: `/storage/emulated/0/<installdir>/Chaosbox/TXT`
+- JSON records: `/storage/emulated/0/<installdir>/KBox/TXT`
 
 The category list is loaded from `Categories=` in the selected `[App.Name]`
 section. Switching app profiles displays that profile's own categories. If the
@@ -248,11 +248,11 @@ are kept consistent when updating.
 Synchronization preserves relative paths. Missing files are not deletions;
 use the deletion actions so that tombstones can propagate. Concurrent edits and
 deletions are retained as explicit conflicts. Each profile has its own local
-journal; non-ChaosBox profiles use a separate default server subtree.
+journal; non-KBox profiles use a separate default server subtree.
 
 SSH Host, Port, User and DataDestination can be overridden in `[SSH]` or
 `[SSH.ProfileName]` in setup.ini. The default main-profile destination is
-`chaosbox-data/TXT/.chaosbox-sync`. Private keys and known-hosts files remain in
+`KBox-data/TXT/.chaosbox-sync`. Private keys and known-hosts files remain in
 private app storage. Only ops and blobs are exchanged; local configuration,
 identity, trash and indexes are excluded. See the shared protocol document.
 
@@ -263,7 +263,7 @@ identity, trash and indexes are excluded. See the shared protocol document.
 ./upload-adb.sh
 ```
 
-Output: `SSHCopy-debug.apk` (app name on the phone: ChaosBox).
+Output: `SSHCopy-debug.apk` (app name on the phone: KBox).
 The bundled configuration comes exclusively from
 `app/src/main/assets/initial/Setup/setup.ini`. It is packaged in the APK at
 `assets/initial/Setup/setup.ini` and copied to
@@ -378,7 +378,7 @@ Build and install a separate Release app with its own name and icon color:
 ./upload-adb-release.sh --installdir work SERIAL
 ```
 
-This produces `released/KBox-work-310.apk`, displayed as `Kbox-work`. The legacy
+This produces `released/KBox-work-310.apk`, displayed as `KBox-work`. The legacy
 `./sign.sh --installdir work` syntax is also supported. Without a name, the
 Release APK is `released/KBox-release-310.apk`. Use the same installation
 name for subsequent updates. The filename includes the product version without dots
@@ -390,11 +390,11 @@ Install a separate Debug app alongside the default app:
 ./upload-adb-debug.sh --installdir work SERIAL
 ```
 
-This builds and installs `SSHCopy-debug-work.apk` as `Kbox-work` with
+This builds and installs `SSHCopy-debug-work.apk` as `KBox-work` with
 package ID `local.sshcopy.installation.work`. Repeat the same name to update
 that app while preserving its private data. Names start with a letter
 and contain only ASCII letters, digits and underscores (maximum 40 characters).
-Names are case-sensitive; `ChaosBox` is a valid name and uses `/sdcard/KBox-ChaosBox`.
+Names are case-sensitive; `KBox` is a valid name and uses `/sdcard/KBox-KBox`.
 The device serial is optional. `./build-apk.sh --installdir work` only builds it.
 Named installations get an icon color derived from their name; updates keep the
 same color. Adaptive launcher icons use this color on the Android home screen
@@ -408,12 +408,12 @@ Configure Android's synchronization target during upload (Debug and the
 `upload-adb.sh` compatibility entry point):
 
 ```bash
-./upload-adb.sh --installdir chaosbox_haushalt \
-  --desktop-install /home/roland/CBHaushalt --remote-profile chaosbox
+./upload-adb.sh --installdir KBox_haushalt \
+  --desktop-install /home/roland/CBHaushalt --remote-profile KBox
 ```
 
 `--desktop-install DIR` obtains the installation ID using the sibling
-`chaosbox-desktop` project's implementation and requires `DIR/setup.ini` to exist.
+`KBox-desktop` project's implementation and requires `DIR/setup.ini` to exist.
 It selects that Desktop installation on this computer. Alternatively, use
 `--installation ID` to supply the Desktop ID directly, including IDs from another
 computer. `--remote-profile NAME` optionally sets `RemoteProfile`; when omitted,
@@ -428,7 +428,7 @@ nonzero exit status even if APK installation already succeeded. The app is not
 started and synchronization is not triggered.
 
 Each named app owns `/sdcard/KBox-<name>/setup.ini`; it never edits another app copy's
-setup. Without `--installdir`, the directory name is `ChaosBox-default`. By default the
+setup. Without `--installdir`, the directory name is `KBox-default`. By default the
 configuration options update `[SSH]`; add `--ssh-profile NAME` for `[SSH.NAME]`.
 Legacy shared setup files, private setup caches and external profile data folders
 are not read or migrated.
@@ -444,7 +444,7 @@ also accepts `ANDROID_SERIAL`. Installation preserves app data and does not
 launch the app. A differently signed installed version cannot be updated in
 place; the script reports the ADB error and does not uninstall it.
 
-## ChaosBox storage
+## KBox storage
 
 The selected profile uses `<installdir>/<profile>/JPG` and `TXT`, including
 subfolders. Grant all-files access in Android settings. Use “Edit setup.ini” to
@@ -489,7 +489,7 @@ using `Title`. The first Box is the initial profile.
 ImageWidth=3000
 
 [Box]
-Title=Chaosbox
+Title=KBox
 Fields=Box,Quantity,Device,Alias,Category,Comment,Package
 Categories=Heizung, Wasser, Elektro, Maurer
 
@@ -580,7 +580,7 @@ Android skips remote media checks and transfers, including after record-only edi
 Changes from Desktop also invalidate the checkpoint through their media journal
 operations. The first sync after upgrading verifies media once and creates the checkpoint.
 
-Remote `JPG/` files are managed by ChaosBox. Direct server edits are not detected
+Remote `JPG/` files are managed by KBox. Direct server edits are not detected
 by this fast path. To request full verification, remove only
 `media-checkpoint.json` from the selected server profile's `TXT/.chaosbox-sync/`
 directory, then synchronize. Missing or malformed checkpoints trigger full
@@ -660,8 +660,8 @@ the shared format directly and comments out those unsupported settings.
 Pure Java shared-format regression test:
 
 ```bash
-javac -d /tmp/kbox-config-tests app/src/main/java/local/sshcopy/{AppProfiles,TextSnippets}.java tests/SharedSetupTest.java
-java -cp /tmp/kbox-config-tests local.sshcopy.SharedSetupTest
+javac -d /tmp/KBox-config-tests app/src/main/java/local/sshcopy/{AppProfiles,TextSnippets}.java tests/SharedSetupTest.java
+java -cp /tmp/KBox-config-tests local.sshcopy.SharedSetupTest
 ```
 
 Setup keys are English: `Title`, `Fields`, `Categories`. Older `Titel`, `Felder`, and `Kategorie` keys remain readable and are converted when setup is saved. User-defined names and snippet text are unchanged.
@@ -671,8 +671,18 @@ Setup keys are English: `Title`, `Fields`, `Categories`. Older `Titel`, `Felder`
 Das Android-Projekt enthält keine setup.ini-Vorlage mehr. Direkte Builds benötigen eine externe Konfiguration:
 
 ```bash
-KBOX_SETUP_FILE=/absoluter/pfad/setup.ini ./build-apk.sh
-KBOX_SETUP_FILE=/absoluter/pfad/setup.ini bash ./sign.sh --installdir Bilder
+KBox_SETUP_FILE=/absoluter/pfad/setup.ini ./build-apk.sh
+KBox_SETUP_FILE=/absoluter/pfad/setup.ini bash ./sign.sh --installdir Bilder
 ```
 
 Bei direktem Gradle-Aufruf ist alternativ `-PsetupFile=/absoluter/pfad/setup.ini` möglich. Ohne existierende Konfiguration bricht der Build mit einer Fehlermeldung ab. Die Datei wird als `initial/Setup/setup.ini` in die APK eingebettet. KBox-make-all erzeugt sie aus der Desktop-Installation und übergibt sie automatisch. Vorhandene Android-Einstellungen bleiben bei Updates erhalten.
+
+## KBox naming compatibility
+
+New code and distribution files use **KBox**. Existing installation directories
+and configured dataset identities are reused. The historical XMP namespace URI
+and `.chaosbox-sync` journal directory remain stable for exchange with existing
+apps and data. XMP now uses the `KBox` prefix; XML namespace identity is unchanged.
+Old setup environment variables and web configuration keys remain accepted as
+fallbacks. Existing GitHub repository URLs remain valid; local tooling also
+accepts the new `KBox-desktop`, `KBox-android` and `KBox-kner-at` directory names.

@@ -110,7 +110,7 @@ final class XmpRecords {
             for(String field : FIELDS) {
                 if ((field.equals("id") || field.equals("revision") || field.equals("base_revision")) && !record.has(field)) continue;
                 remove(d,ns(field),name(field));
-                String prefix=field.equals("comment")?"dc":field.equals("created")?"xmp":"chaosbox";
+                String prefix=field.equals("comment")?"dc":field.equals("created")?"xmp":"KBox";
                 Element property=d.createElementNS(ns(field),prefix+":"+name(field));
                 String text=record.isNull(field)?"":record.optString(field,"");
                 if(field.equals("comment")) {
@@ -122,7 +122,7 @@ final class XmpRecords {
             }
             remove(d,NS,"version");
             remove(d,"http://ns.adobe.com/exif/1.0/","UserComment");
-            description.setAttributeNS(NS,"chaosbox:version","1");
+            description.setAttributeNS(NS,"KBox:version","1");
             ByteArrayOutputStream xml=new ByteArrayOutputStream();
             Transformer t=TransformerFactory.newInstance().newTransformer();
             t.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION,"yes");

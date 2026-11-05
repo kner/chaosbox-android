@@ -7,7 +7,7 @@ import java.security.MessageDigest;
 import java.util.*;
 import org.json.*;
 
-/** Immutable, transport-independent ChaosBox synchronization journal v1. */
+/** Immutable, transport-independent KBox synchronization journal v1. */
 final class SyncStore {
     interface Metadata { JSONObject read(File file) throws Exception; void write(File file, JSONObject record) throws Exception; }
     final File images, data, root;

@@ -145,7 +145,7 @@ public class EditorActivity extends Activity {
             initializeIndex();
         } else if (!storageRequested) {
             storageRequested = true;
-            Toast.makeText(this, "Please allow access to all files for ChaosBox.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Please allow access to all files for KBox.", Toast.LENGTH_LONG).show();
             requestStorageAccess();
         }
     }
@@ -698,7 +698,7 @@ public class EditorActivity extends Activity {
 
     private void showError(String message) {
         if (isFinishing() || isDestroyed()) return;
-        new android.app.AlertDialog.Builder(this).setTitle("ChaosBox error")
+        new android.app.AlertDialog.Builder(this).setTitle("KBox error")
                 .setMessage(message).setPositiveButton("OK", null).show();
     }
 

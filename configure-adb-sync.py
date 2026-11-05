@@ -16,14 +16,15 @@ def installation_id(directory):
     directory = Path(directory).expanduser().resolve()
     if not (directory / 'setup.ini').is_file():
         raise ValueError(f'Desktop setup.ini fehlt: {directory}')
-    desktop = ROOT.parent / 'chaosbox-desktop'
+    desktop = ROOT.parent / 'KBox-desktop'
+    if not desktop.is_dir(): desktop = ROOT.parent / 'chaosbox-desktop'
     # Use Desktop's implementation rather than duplicating its machine/path ID algorithm.
     result = subprocess.run([sys.executable, '-B', '-c',
                              'import sys; sys.path.insert(0, sys.argv[1]); import core; '
                              'print(core.Settings(sys.argv[2]).installation_id)',
-                             str(desktop), str(directory)], capture_output=True, text=True)
+                             str(desktop / 'src'), str(directory)], capture_output=True, text=True)
     if result.returncode:
-        raise ValueError('Desktop-ID konnte nicht gelesen werden. Das Geschwisterprojekt chaosbox-desktop und dessen Python-Abhängigkeiten werden benötigt.')
+        raise ValueError('Desktop-ID konnte nicht gelesen werden. Das Geschwisterprojekt KBox-desktop und dessen Python-Abhängigkeiten werden benötigt.')
     return result.stdout.strip()
 
 
@@ -73,7 +74,7 @@ def configure(args, installation):
     def adb(*command, **kwargs):
         return subprocess.run([args.adb, '-s', args.serial, *command], check=True, **kwargs)
 
-    with tempfile.TemporaryDirectory(prefix='chaosbox-setup-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='KBox-setup-') as temporary:
         local = Path(temporary) / 'setup.ini'
         probe = subprocess.run([args.adb, '-s', args.serial, 'shell',
                                 f'if [ -f {remote} ]; then echo exists; elif [ ! -e {remote} ] && [ -d /sdcard ]; then echo missing; else exit 1; fi'],
@@ -85,9 +86,9 @@ def configure(args, installation):
             adb('pull', remote, str(local), capture_output=True)
             text = local.read_bytes().decode('utf-8')
         else:
-            source = os.environ.get('KBOX_SETUP_FILE', '')
+            source = os.environ.get('KBox_SETUP_FILE', os.environ.get('KBOX_SETUP_FILE', ''))
             if not source or not Path(source).is_file():
-                raise ValueError('Android setup.ini fehlt. KBOX_SETUP_FILE auf eine vorhandene setup.ini setzen.')
+                raise ValueError('Android setup.ini fehlt. KBox_SETUP_FILE auf eine vorhandene setup.ini setzen.')
             text = Path(source).read_bytes().decode('utf-8')
         updated = update_setup(text, installation, args.remote_profile, args.ssh_profile)
         if exists and text == updated:
@@ -120,7 +121,7 @@ def main():
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument('--installation')
     target.add_argument('--desktop-install', type=Path)
-    parser.add_argument('--android-installdir', default='ChaosBox-default')
+    parser.add_argument('--android-installdir', default='KBox-default')
     parser.add_argument('--remote-profile')
     parser.add_argument('--ssh-profile')
     parser.add_argument('--adb')
@@ -128,7 +129,7 @@ def main():
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
     try:
-        if args.android_installdir != 'ChaosBox-default' and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,39}', args.android_installdir):
+        if args.android_installdir != 'KBox-default' and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,39}', args.android_installdir):
             raise ValueError('Ungültiges Android-Installationsverzeichnis.')
         installation = installation_id(args.desktop_install) if args.desktop_install else args.installation
         if not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,79}', installation):

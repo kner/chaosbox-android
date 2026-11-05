@@ -14,7 +14,7 @@ def run(*args):
     return subprocess.check_output(args, text=True).strip()
 
 
-with tempfile.TemporaryDirectory(prefix="chaosbox-mp4-") as temporary:
+with tempfile.TemporaryDirectory(prefix="KBox-mp4-") as temporary:
     folder = Path(temporary)
     classes = folder / "classes"
     classes.mkdir()

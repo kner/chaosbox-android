@@ -10,11 +10,17 @@ public final class InstallationResetTest {
         try {
             File first=InstallationFiles.root(storage.toFile(),"KBox-Bilder");
             require(first.getName().equals("KBox-Bilder"),"Named installation directory changed");
-            require(!InstallationFiles.root(storage.toFile(),"ChaosBox-default").getName().equalsIgnoreCase(InstallationFiles.root(storage.toFile(),"chaosbox").getName()),"Default and named roots alias on case-insensitive storage");
+            require(!InstallationFiles.root(storage.toFile(),"KBox-default").getName().equalsIgnoreCase(InstallationFiles.root(storage.toFile(),"KBox").getName()),"Default and named roots alias on case-insensitive storage");
+            File oldNamed = storage.resolve("Kbox-Existing").toFile();
+            oldNamed.mkdirs();
+            require(InstallationFiles.root(storage.toFile(),"KBox-Existing").equals(oldNamed),"Existing mixed-case installation must be reused");
+            File oldDefault = storage.resolve("ChaosBox-default").toFile();
+            oldDefault.mkdirs();
+            require(InstallationFiles.root(storage.toFile(),"KBox-default").equals(oldDefault),"Existing default must be reused");
             File other=InstallationFiles.root(storage.toFile(),"work");
             Files.createDirectories(other.toPath());Files.writeString(new File(other,"setup.ini").toPath(),"[SSH]\nInstallation=old-other\n");
-            Files.createDirectories(storage.resolve("ChaosBox/Setup"));Files.writeString(storage.resolve("ChaosBox/Setup/setup.ini"),"[SSH]\nInstallation=old-shared\n");
-            String defaults="[App.Chaosbox]\nTitel=Chaosbox\n[SSH]\nHost=server\n";
+            Files.createDirectories(storage.resolve("KBox/Setup"));Files.writeString(storage.resolve("KBox/Setup/setup.ini"),"[SSH]\nInstallation=old-shared\n");
+            String defaults="[App.KBox]\nTitel=KBox\n[SSH]\nHost=server\n";
             require(InstallationFiles.setup(first,defaults).equals(defaults),"Shared setup resurrected");
             String oldGeneration=InstallationFiles.generation(first);
             Files.createDirectories(first.toPath());Files.writeString(new File(first,"setup.ini").toPath(),"[SSH]\nInstallation=old\n");
@@ -22,10 +28,10 @@ public final class InstallationResetTest {
             try(java.util.stream.Stream<Path> files=Files.walk(first.toPath())){for(Path path:files.sorted(Comparator.reverseOrder()).toArray(Path[]::new))Files.delete(path);}
             require(InstallationFiles.setup(first,defaults).equals(defaults),"Deleted installation restored old target");
             require(!InstallationFiles.generation(first).equals(oldGeneration),"Deleted generation reused");
-            AppProfiles config=AppProfiles.parse("[App.Chaosbox]\nJPG=/old/outside\nDaten=../external\n");
+            AppProfiles config=AppProfiles.parse("[App.KBox]\nJPG=/old/outside\nDaten=../external\n");
             StoragePaths paths=StoragePaths.forProfile(first,config.selected(""));
-            require(paths.images.equals(new File(first,"Chaosbox/JPG")),"External images used");
-            require(paths.data.equals(new File(first,"Chaosbox/TXT"))&&paths.legacyData.equals(paths.data),"External/legacy data used");
+            require(paths.images.equals(new File(first,"KBox/JPG")),"External images used");
+            require(paths.data.equals(new File(first,"KBox/TXT"))&&paths.legacyData.equals(paths.data),"External/legacy data used");
             Files.createSymbolicLink(storage.resolve("linked"),other.toPath());
             try{InstallationFiles.root(storage.toFile(),"linked");throw new AssertionError("Linked installation accepted");}catch(IOException expected){}
             System.out.println("PASS: delete/recreate Android installation stays empty and unbound; no shared cache, legacy data, external paths or cross-installation fallback");

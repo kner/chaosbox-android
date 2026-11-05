@@ -5,9 +5,9 @@ from pathlib import Path
 import paramiko
 p=argparse.ArgumentParser();p.add_argument('--json-jar',required=True,type=Path);p.add_argument('--desktop',type=Path);a=p.parse_args()
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(a.desktop or ROOT.parent/'chaosbox-desktop'))
+sys.path.insert(0,str(a.desktop or ROOT.parent/'KBox-desktop'))
 import core
-from chaos_sync import Store,atomic
+from KBox_sync import Store,atomic
 from sync_transport import sftp_exchange,sftp_connection,valid_manifest
 
 operation_reads=[]
@@ -64,7 +64,7 @@ class Server(paramiko.SFTPServerInterface):
         try:action();return paramiko.SFTP_OK
         except OSError as e:return paramiko.SFTPServer.convert_errno(e.errno)
 
-with tempfile.TemporaryDirectory(prefix='chaosbox-local-sftp-') as temporary:
+with tempfile.TemporaryDirectory(prefix='KBox-local-sftp-') as temporary:
     folder=Path(temporary);server_root=folder/'server';server_root.mkdir()
     key=paramiko.RSAKey.generate(2048);host=paramiko.RSAKey.generate(2048);keypath=folder/'key';key.write_private_key_file(str(keypath))
     listener=socket.socket();listener.bind(('127.0.0.1',0));listener.listen();listener.settimeout(.2);port=listener.getsockname()[1]
@@ -187,14 +187,14 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-local-sftp-') as temporary:
         assert len(json.loads((fallback/'TXT/bulk.json').read_text()))==32
         print('PASS: parallel first-sync Desktop upload, Android download/upload, failed-upload lock cleanup/resume and channel-limit fallback')
         # End-to-end regression: the clients' default destination must be the website's own storage.
-        web_source=ROOT.parent/'chaosbox-kner-at'
+        web_source=ROOT.parent/'KBox-kner-at'
         web=server_root/'l1'
         subprocess.run([sys.executable,str(web_source/'scripts/install-standalone.py'),'--installdir',str(web)],check=True,stdout=subprocess.DEVNULL)
         php='require $argv[1]; $d=exifDatasets(); echo json_encode(array_keys($d));'
         bootstrap=web/'app/bootstrap.php'
         # Simulate a browser opening the empty site before any sync has occurred.
-        subprocess.run(['php','-r','require $argv[1]; (new App\\Services\\ChaosBoxCatalog(exifDataRoot()))->load();',str(bootstrap)],check=True)
-        settings=core.Settings(folder/'current-desktop');settings.ensure(default_box='ChaosBox')
+        subprocess.run(['php','-r','require $argv[1]; (new App\\Services\\KBoxCatalog(exifDataRoot()))->load();',str(bootstrap)],check=True)
+        settings=core.Settings(folder/'current-desktop');settings.ensure(default_box='KBox')
         profile=settings.profile(settings.default)
         atomic(profile.data/'web.json','[{"device":"visible-after-sync","comment":"SFTP to web storage"}]')
         destination=settings.ssh['datadestination']
@@ -206,8 +206,8 @@ with tempfile.TemporaryDirectory(prefix='chaosbox-local-sftp-') as temporary:
         other_android=folder/'web-android'
         subprocess.run(['java','-cp',f'{folder}:{classpath}','local.sshcopy.SftpSyncTest',str(other_android),str(port),str(keypath),str(hosts),android_destination+'/.chaosbox-sync'],check=True,stdout=subprocess.DEVNULL)
         datasets=json.loads(subprocess.check_output(['php','-r',php,str(bootstrap)],text=True))
-        assert datasets==[settings.installation_id+'/chaosbox'],datasets
-        php='require $argv[1]; $_GET=["installation"=>""]; $c=new App\\Services\\ChaosBoxCatalog(exifSelectedDataRoot()); echo json_encode(array_map(fn($e)=>$e["data"]->device,$c->load()));'
+        assert datasets==[settings.installation_id+'/KBox'],datasets
+        php='require $argv[1]; $_GET=["installation"=>""]; $c=new App\\Services\\KBoxCatalog(exifSelectedDataRoot()); echo json_encode(array_map(fn($e)=>$e["data"]->device,$c->load()));'
         visible=json.loads(subprocess.check_output(['php','-r',php,str(bootstrap)],text=True))
         assert 'visible-after-sync' in visible,visible
         assert json.loads((other_android/'TXT/web.json').read_text())[0]['device']=='visible-after-sync'

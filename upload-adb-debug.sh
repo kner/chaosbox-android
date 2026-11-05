@@ -6,7 +6,7 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 usage() {
     echo "Verwendung: $0 [--installdir NAME] [--desktop-install PFAD | --installation ID] [--remote-profile NAME] [--ssh-profile NAME] [GERAETE-SERIENNUMMER]"
     echo "Ohne NAME: installiert SSHCopy-debug.apk. Vorher ./build-apk.sh ausführen."
-    echo "Mit NAME: baut und installiert eine separate App ChaosBox (NAME)."
+    echo "Mit NAME: baut und installiert eine separate App KBox (NAME)."
     echo "--desktop-install PFAD: Desktop-ID aus PFAD/setup.ini ableiten; Android setup.ini aktualisieren."
     echo "--installation ID: Desktop-ID direkt setzen. --remote-profile NAME: Desktop-Profil wählen."
     echo "--ssh-profile NAME: nur [SSH.NAME] statt des gemeinsamen [SSH]-Abschnitts ändern."
@@ -46,7 +46,7 @@ while (( $# )); do
     esac
 done
 if (( ${#sync_args[@]} )); then
-    /usr/bin/python3 "$PWD/configure-adb-sync.py" "${sync_args[@]}" --android-installdir "${installation:-ChaosBox-default}" --check
+    /usr/bin/python3 "$PWD/configure-adb-sync.py" "${sync_args[@]}" --android-installdir "${installation:-KBox-default}" --check
 fi
 apk="$PWD/SSHCopy-debug.apk"
 if [[ -n "$installation" ]]; then
@@ -85,5 +85,5 @@ if ! "$adb_bin" -s "$serial" install -r "$apk"; then
 fi
 echo "Debug-APK auf $serial installiert."
 if (( ${#sync_args[@]} )); then
-    /usr/bin/python3 "$PWD/configure-adb-sync.py" "${sync_args[@]}" --android-installdir "${installation:-ChaosBox-default}" --adb "$adb_bin" --serial "$serial"
+    /usr/bin/python3 "$PWD/configure-adb-sync.py" "${sync_args[@]}" --android-installdir "${installation:-KBox-default}" --adb "$adb_bin" --serial "$serial"
 fi

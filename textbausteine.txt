@@ -10,13 +10,13 @@ User Comment                    : {"created":"2026-09-17T18:40:53.029063+02:00",
 
 # Beispiel-Setupdatei für EXIF UserComment
 [App]
-Standard=Chaosbox
+Standard=KBox
 
 
-[App.Chaosbox]
-Titel=Chaosbox
-JPG=ChaosBox/JPG
-Daten=ChaosBox/boxes
+[App.KBox]
+Titel=KBox
+JPG=KBox/JPG
+Daten=KBox/boxes
 Felder=Box,Anzahl,Device,Alias,Kategorie,Kommentar,Package
 Kategorie=Heizung, Wasser, Elektro, Maurer, Fliesen, Garten, Elektronikbauteile, El-Baugruppen, Haushalt
 

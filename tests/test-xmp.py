@@ -13,14 +13,14 @@ import tempfile
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--json-jar', type=Path, required=True)
-parser.add_argument('--desktop', type=Path, default=Path(__file__).resolve().parents[2] / 'chaosbox-desktop')
+parser.add_argument('--desktop', type=Path, default=Path(__file__).resolve().parents[2] / 'KBox-desktop')
 args = parser.parse_args()
 sys.path.insert(0, str(args.desktop.resolve()))
 import core
 from PIL import Image
 
 root = Path(__file__).resolve().parents[1]
-with tempfile.TemporaryDirectory(prefix='chaosbox-xmp-') as temporary:
+with tempfile.TemporaryDirectory(prefix='KBox-xmp-') as temporary:
     folder = Path(temporary)
     subprocess.run(['javac', '-cp', str(args.json_jar), '-d', str(folder),
                     str(root / 'app/src/main/java/local/sshcopy/XmpRecords.java'),

@@ -33,14 +33,14 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(result, '[App]\nStandard=Work\n\n[SSH.Work]\nInstallation=new\n')
 
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix='chaosbox-upload-')
+        self.temporary = tempfile.TemporaryDirectory(prefix='KBox-upload-')
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         for name in ('upload-adb-debug.sh', 'upload-adb.sh', 'configure-adb-sync.py'):
             shutil.copy2(ROOT / name, self.root / name)
         asset = self.root / 'external/setup.ini'
         asset.parent.mkdir(parents=True)
-        asset.write_text('[App]\nStandard=Chaosbox\n[SSH]\nHost=server\n')
+        asset.write_text('[App]\nStandard=KBox\n[SSH]\nHost=server\n')
         (self.root / 'SSHCopy-debug.apk').touch()
         build = self.root / 'build-apk.sh'
         build.write_text('#!/bin/bash\ntouch "SSHCopy-debug-$2.apk"\n')
@@ -68,9 +68,9 @@ else:sys.exit(3)
         adb.chmod(0o755)
         self.device = self.root / 'device'
         self.device.mkdir()
-        self.setup = self.device / 'ChaosBox-default/setup.ini'
+        self.setup = self.device / 'KBox-default/setup.ini'
         self.setup.parent.mkdir(parents=True)
-        self.env = dict(os.environ, PATH=str(self.root)+':'+os.environ['PATH'], FAKE_DEVICE=str(self.device), KBOX_SETUP_FILE=str(asset))
+        self.env = dict(os.environ, PATH=str(self.root)+':'+os.environ['PATH'], FAKE_DEVICE=str(self.device), KBox_SETUP_FILE=str(asset))
 
     def upload(self, *args, success=True):
         result = subprocess.run(['bash', str(self.root / 'upload-adb.sh'), *args], env=self.env, capture_output=True, text=True)

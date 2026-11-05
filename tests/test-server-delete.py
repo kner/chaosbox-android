@@ -6,8 +6,8 @@ import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT.parent / 'chaosbox-desktop'))
-import chaos_sync
+sys.path.insert(0, str(ROOT.parent / 'KBox-desktop'))
+import KBox_sync
 spec = importlib.util.spec_from_file_location('server_delete', ROOT / 'scripts/server-delete.py')
 server_delete = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(server_delete)
@@ -17,7 +17,7 @@ with tempfile.TemporaryDirectory() as temporary:
     (data / 'TXT').mkdir()
     (data / 'JPG').mkdir()
     (data / 'TXT/box.json').write_text('[{"comment":"one"},{"comment":"two"}]')
-    store = chaos_sync.Store(data / 'JPG', data / 'TXT')
+    store = KBox_sync.Store(data / 'JPG', data / 'TXT')
     store.capture()
     # Simulates an operator having already removed the server JSON file.
     (data / 'TXT/box.json').unlink()

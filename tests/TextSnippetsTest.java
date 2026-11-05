@@ -23,7 +23,7 @@ public final class TextSnippetsTest {
         check(snippets.get("empty").isEmpty(), "Allow empty text");
         check(snippets.get("path").equals("C:\\temp\\neu"), "Do not interpret backslashes");
         String body = "Erste Zeile  \n  Zweite Zeile\n\n# Text\n; Text\n"
-                + "[App.Fake]\nDaten=ChaosBox/daten\n[Kategorie]\nAudio\n"
+                + "[App.Fake]\nDaten=KBox/daten\n[Kategorie]\nAudio\n"
                 + "[ImageSize]\nLIMIT=0\nBei Unsicherheit schreibe \"?\"\nLetzte Zeile";
         String multiline = "[TextSnippets]\nlang=\"" + body + "\"\n"
                 + "next=\"Danach\"\nseparat=\"Start\nEnde\n\"\n";

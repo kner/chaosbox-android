@@ -10,7 +10,7 @@ public final class AppProfilesTest {
     }
     public static void main(String[] args) throws Exception {
         String text = "[App]\nStandard=Bilderbox\n"
-                + "[App.Chaobox]\nTitel=Chaosbox\nJPG=ChaosBox/JPG\nDaten=ChaosBox/daten\n"
+                + "[App.Chaobox]\nTitel=KBox\nJPG=KBox/JPG\nDaten=KBox/daten\n"
                 + "[App.Bilderbox]\nTitel=Bilderbox\nJPG=Bilderbox/JPG\nDaten=Bilderbox/daten\n"
                 + "Felder=Box,,,Tags,Kategorie,Kommentar\nKategorie=Fotos, Gemälde, Fotos\n"
                 + "[App.Archiv]\nTitel=Archiv\nBilder=Archiv/JPG\nDaten=Archiv/daten\nFelder=\n";
@@ -27,7 +27,7 @@ public final class AppProfilesTest {
         check(profiles.find("Chaobox").categories.isEmpty(), "Other profile has no shared categories");
         check(profiles.profiles.size() == 3, "Arbitrary profile sections");
         check(profiles.selected("").id.equals("Bilderbox"), "Configured default");
-        check(profiles.selected("Chaobox").title.equals("Chaosbox"), "Remembered selection overrides default");
+        check(profiles.selected("Chaobox").title.equals("KBox"), "Remembered selection overrides default");
         check(profiles.selected("deleted").id.equals("Bilderbox"), "Deleted selection falls back");
         AppProfiles.Profile pictures = profiles.find("Bilderbox");
         check(pictures.visible(0) && !pictures.visible(1) && !pictures.visible(2), "Empty inner positions hidden");
@@ -60,8 +60,8 @@ public final class AppProfilesTest {
         String inherited = "[Kategorie]\nAudio\n" + text;
         check(AppProfiles.parse(AppProfiles.withCategory(inherited, "Chaobox", "Video"))
                 .find("Chaobox").categories.equals(java.util.List.of("Audio", "Video")), "Preserve inherited categories");
-        check(AppProfiles.parse(AppProfiles.withCategory("[Kategorie]\nAudio\n", "Chaosbox", "Video"))
-                .find("Chaosbox").categories.equals(java.util.List.of("Audio", "Video")), "Extend legacy setup");
+        check(AppProfiles.parse(AppProfiles.withCategory("[Kategorie]\nAudio\n", "KBox", "Video"))
+                .find("KBox").categories.equals(java.util.List.of("Audio", "Video")), "Extend legacy setup");
         try {
             AppProfiles.withCategory(text, "Bilderbox", "Bad\n[App.Other]");
             throw new AssertionError("Multiline category accepted");
@@ -74,10 +74,10 @@ public final class AppProfilesTest {
         check(AppProfiles.withDefaults(completed).equals(completed), "Existing profiles extended once");
         String converted = AppProfiles.withDefaults("[Kategorie]\nAudio\n[Pfade]\nBilder=Photos\nDaten=Records\n");
         check(!converted.contains("[Kategorie]"), "Remove global category section");
-        check(AppProfiles.parse(converted).find("Chaosbox").categories.equals(java.util.Collections.singletonList("Audio")),
+        check(AppProfiles.parse(converted).find("KBox").categories.equals(java.util.Collections.singletonList("Audio")),
                 "Move old category to profile");
         check(!converted.contains("[Pfade]"), "Convert old section");
-        check(AppProfiles.parse(converted).find("Chaosbox").images.equals("Chaosbox/JPG"), "Ignore old external paths");
+        check(AppProfiles.parse(converted).find("KBox").images.equals("KBox/JPG"), "Ignore old external paths");
         check(AppProfiles.withDefaults(converted).equals(converted), "Idempotent conversion");
         String migrated = AppProfiles.withDefaults("[Kategorie]\nAudio\nElektro\n" + text);
         check(!migrated.contains("[Kategorie]"), "Remove old global list from profiled setup");
@@ -96,7 +96,7 @@ public final class AppProfilesTest {
                     "Bilderbox reads only its own legacy data folder");
             check(other.data.equals(root.resolve("Bilderbox/TXT").toFile().getCanonicalFile()),
                     "Bilderbox uses its migrated boxes folder");
-            check(other.legacyImages.equals(other.images), "Other profiles never import Chaosbox images");
+            check(other.legacyImages.equals(other.images), "Other profiles never import KBox images");
             StoragePaths snapshot = StoragePaths.snapshot(root.toFile(), other.images.getPath(), other.data.getPath(), pictures.id);
             check(snapshot.index.equals(other.index), "Upload snapshot preserves profile index");
         } finally { Files.delete(root); }
